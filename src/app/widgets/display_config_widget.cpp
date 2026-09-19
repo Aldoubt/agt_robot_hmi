@@ -5,6 +5,7 @@
 #include "config/config_manager.h"
 #include "msg/msg_info.h"
 #include "logger/logger.h"
+#include "map_lifecycle_client.h"
 #include <QAbstractItemView>
 #include <QFileDialog>
 #include <QFrame>
@@ -15,6 +16,10 @@
 #include <QSizePolicy>
 #include <QSpacerItem>
 #include <algorithm>
+#include <QJsonDocument>
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QTimer>
 
 namespace {
 
@@ -32,6 +37,30 @@ DisplayConfigWidget::DisplayConfigWidget(QWidget *parent)
   setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
   setMinimumWidth(280);
   ApplyGlobalStyle();
+  map_lifecycle_client_ = new MapLifecycleClient(this);
+  connect(map_lifecycle_client_, &MapLifecycleClient::mapsReceived, this,
+          [this](const QString &payload) {
+            if (!map_table_) return;
+            map_table_->setRowCount(0);
+            const auto rows = QJsonDocument::fromJson(payload.toUtf8()).array();
+            for (const auto &value : rows) {
+              const auto row = value.toObject();
+              const int r = map_table_->rowCount();
+              map_table_->insertRow(r);
+              map_table_->setItem(r, 0, new QTableWidgetItem(row["map_id"].toString()));
+              map_table_->setItem(r, 1, new QTableWidgetItem(row["version"].toString()));
+              map_table_->setItem(r, 2, new QTableWidgetItem(row["status"].toString()));
+              map_table_->setItem(r, 3, new QTableWidgetItem(row["active"].toBool() ? tr("ACTIVE") : QString()));
+              map_table_->setItem(r, 4, new QTableWidgetItem(row["valid"].toBool() ? tr("PASS") : tr("FAIL")));
+            }
+          });
+  connect(map_lifecycle_client_, &MapLifecycleClient::operationFinished, this,
+          [this](bool success, const QString &message, const QString &report) {
+            if (map_lifecycle_status_) map_lifecycle_status_->setText(message);
+            if (!success) QMessageBox::warning(this, tr("Map operation failed"), message);
+            else if (!report.isEmpty()) QMessageBox::information(this, tr("Map validation"), report);
+            if (success) map_lifecycle_client_->Refresh();
+          });
   InitUI();
 }
 
@@ -144,7 +173,7 @@ void DisplayConfigWidget::InitUI() {
   nav_list_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
   nav_list_->setFocusPolicy(Qt::StrongFocus);
   const QStringList navTitles = {tr("Channel"), tr("Display & topics"), tr("Cameras"),
-                                 tr("Robot shape"), tr("Default map"), tr("Key-value")};
+                                 tr("Robot shape"), tr("Map lifecycle"), tr("Default map"), tr("Key-value")};
   for (const QString &t : navTitles) {
     nav_list_->addItem(t);
   }
@@ -156,6 +185,7 @@ void DisplayConfigWidget::InitUI() {
   page_stack_->addWidget(CreateLayersPage());
   page_stack_->addWidget(CreateImagePage());
   page_stack_->addWidget(CreateRobotPage());
+  page_stack_->addWidget(CreateMapLifecyclePage());
   page_stack_->addWidget(CreateMapPage());
   page_stack_->addWidget(CreateKeyValuePage());
 
@@ -165,6 +195,63 @@ void DisplayConfigWidget::InitUI() {
   body->addWidget(nav_list_, 0);
   body->addWidget(page_stack_, 1);
   main_layout_->addLayout(body, 1);
+}
+
+QWidget *DisplayConfigWidget::CreateMapLifecyclePage() {
+  QWidget *page = new QWidget;
+  auto *root = new QVBoxLayout(page);
+  root->setContentsMargins(8, 4, 8, 8);
+  auto *title = new QLabel(tr("Map lifecycle"));
+  title->setObjectName(QStringLiteral("pageTitle"));
+  root->addWidget(title);
+  AddHintLabel(root, tr("Maps are reviewed and activated through AGT Map Manager. The HMI never writes released map packages directly."));
+
+  map_table_ = new QTableWidget(page);
+  map_table_->setColumnCount(5);
+  map_table_->setHorizontalHeaderLabels({tr("Map ID"), tr("Version"), tr("Status"), tr("Active"), tr("Package")});
+  map_table_->setSelectionBehavior(QAbstractItemView::SelectRows);
+  map_table_->setSelectionMode(QAbstractItemView::SingleSelection);
+  map_table_->horizontalHeader()->setStretchLastSection(true);
+  map_table_->setEditTriggers(QAbstractItemView::NoEditTriggers);
+  root->addWidget(map_table_, 1);
+
+  auto *buttons = new QHBoxLayout();
+  auto *refresh = new QPushButton(tr("Refresh"), page);
+  auto *validate = new QPushButton(tr("Validate"), page);
+  auto *activate = new QPushButton(tr("Activate"), page);
+  auto *discard = new QPushButton(tr("Discard"), page);
+  buttons->addWidget(refresh); buttons->addWidget(validate); buttons->addWidget(activate);
+  buttons->addWidget(discard); buttons->addStretch();
+  root->addLayout(buttons);
+  map_lifecycle_status_ = new QLabel(tr("Waiting for Map Manager…"), page);
+  root->addWidget(map_lifecycle_status_);
+  connect(refresh, &QPushButton::clicked, this, &DisplayConfigWidget::RefreshMapLifecycle);
+  connect(validate, &QPushButton::clicked, this, [this]() {
+    QString id, version; SelectedMap(&id, &version);
+    if (!id.isEmpty()) map_lifecycle_client_->Validate(id, version);
+  });
+  connect(activate, &QPushButton::clicked, this, [this]() {
+    QString id, version; SelectedMap(&id, &version);
+    if (!id.isEmpty()) map_lifecycle_client_->Activate(id, version);
+  });
+  connect(discard, &QPushButton::clicked, this, [this]() {
+    QString id, version; SelectedMap(&id, &version);
+    if (!id.isEmpty() && QMessageBox::question(this, tr("Discard map"), tr("Discard selected candidate?")) == QMessageBox::Yes)
+      map_lifecycle_client_->Discard(id, version);
+  });
+  QTimer::singleShot(500, this, &DisplayConfigWidget::RefreshMapLifecycle);
+  return page;
+}
+
+void DisplayConfigWidget::RefreshMapLifecycle() {
+  if (map_lifecycle_client_) map_lifecycle_client_->Refresh();
+}
+
+void DisplayConfigWidget::SelectedMap(QString *map_id, QString *version) const {
+  if (!map_table_ || !map_table_->currentItem()) return;
+  const int row = map_table_->currentRow();
+  *map_id = map_table_->item(row, 0)->text();
+  *version = map_table_->item(row, 1)->text();
 }
 
 QWidget *DisplayConfigWidget::CreateChannelPage() {

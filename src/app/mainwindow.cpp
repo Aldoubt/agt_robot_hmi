@@ -31,9 +31,11 @@
 #include <QButtonGroup>
 #include <QMessageBox>
 #include <QDockWidget>
+#include <QInputDialog>
 
 #include "widgets/speed_ctrl.h"
 #include "widgets/display_config_widget.h"
+#include "widgets/map_lifecycle_client.h"
 #include "widgets/diagnostic_dock_widget.h"
 #include "msg/diagnostic_snapshot.h"
 #include "display/manager/view_manager.h"
@@ -367,6 +369,15 @@ void MainWindow::setupUi() {
   edit_map_btn->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
   edit_map_btn->setStyleSheet(modernToolButtonStyle);
   horizontalLayout_tools->addWidget(edit_map_btn);
+
+  QToolButton *manual_control_btn = new QToolButton();
+  manual_control_btn->setText("手动接管");
+  manual_control_btn->setCheckable(true);
+  manual_control_btn->setIconSize(QSize(20, 20));
+  manual_control_btn->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
+  manual_control_btn->setStyleSheet(modernToolButtonStyle);
+  manual_control_btn->setToolTip("切换 HMI 与 Nav2 的底盘速度控制权");
+  horizontalLayout_tools->addWidget(manual_control_btn);
 
   QIcon icon6;
   icon6.addFile(QString::fromUtf8(":/images/open.svg"),
@@ -903,61 +914,84 @@ void MainWindow::setupUi() {
   connect(reloc_btn, &QToolButton::clicked,
           [this]() { display_manager_->StartReloc(); });
 
-  connect(re_save_map_btn, &QToolButton::clicked, [this]() {
-    QString fileName = QFileDialog::getSaveFileName(nullptr, "Save Map files",
-                                                    "", "Map files (*.yaml,*.pgm,*.pgm.json)",
-                                                    nullptr, QFileDialog::DontUseNativeDialog);
-    if (!fileName.isEmpty()) {
-      // 用户选择了文件夹，可以在这里进行相应的操作
-      LOG_INFO("用户选择的保存地图路径：" << fileName.toStdString());
-      
-      // 保存占用栅格地图
-      auto occ_map = display_manager_->GetOccupancyMap();
-      occ_map.Save(fileName.toStdString());
-      
-      // 保存拓扑地图
-      auto topology_map = display_manager_->GetTopologyMap();
-
-      std::string topology_path = fileName.toStdString();
-      // 替换扩展名为.topology
-      size_t last_dot = topology_path.find_last_of(".");
-      if (last_dot != std::string::npos) {
-        topology_path = topology_path.substr(0, last_dot) + ".topology";
-      } else {
-        topology_path += ".topology";
-      }
-      Config::ConfigManager::Instance()->WriteTopologyMap(topology_path, topology_map);
-      
-      // 显示保存成功对话框
-      QMessageBox::information(this, "保存成功", 
-                              "地图文件已成功保存到:\n" + fileName,
-                              QMessageBox::Ok);
-    } else {
-      // 用户取消了选择
-      LOG_INFO("取消保存地图");
+  map_lifecycle_client_ = new MapLifecycleClient(this);
+  connect(manual_control_btn, &QToolButton::toggled, [this, manual_control_btn](bool enabled) {
+    map_lifecycle_client_->SetManualControl(enabled);
+    manual_control_btn->setText(enabled ? "退出手动" : "手动接管");
+    if (!enabled) {
+      RobotSpeed stop{};
+      PUBLISH(MSG_ID_SET_ROBOT_SPEED, stop);
     }
   });
 
+  auto reset_edit_ui = [this, edit_map_btn, save_map_btn, re_save_map_btn, tools_edit_map_widget]() {
+    display_manager_->SetEditMapMode(Display::MapEditMode::kStopEdit);
+    edit_map_btn->setText("编辑地图");
+    save_map_btn->setText("保存地图");
+    save_map_btn->setEnabled(false);
+    save_map_btn->setToolTip("正式地图包不可直接覆盖；请先进入编辑会话");
+    re_save_map_btn->setEnabled(false);
+    re_save_map_btn->setToolTip("编辑地图通过 Map Manager 发布为新版本");
+    tools_edit_map_widget->hide();
+    edit_session_id_.clear();
+    if (!released_map_path_.empty()) LoadMap(released_map_path_ + ".yaml");
+  };
+  re_save_map_btn->setEnabled(false);
+  re_save_map_btn->setToolTip("编辑地图通过 Map Manager 发布为新版本");
+
+  connect(map_lifecycle_client_, &MapLifecycleClient::editStarted,
+          [this, edit_map_btn, save_map_btn, re_save_map_btn, tools_edit_map_widget](
+              bool success, const QString &message, const QString &session_id, const QString &navigation_map_yaml) {
+    edit_map_btn->setEnabled(true);
+    if (!success || session_id.isEmpty() || navigation_map_yaml.isEmpty()) {
+      QMessageBox::warning(this, "无法编辑地图", message);
+      return;
+    }
+    if (!LoadMap(navigation_map_yaml.toStdString())) {
+      map_lifecycle_client_->CancelEdit(session_id);
+      return;
+    }
+    edit_session_id_ = session_id;
+    display_manager_->SetEditMapMode(Display::MapEditMode::kMoveCursor);
+    edit_map_btn->setText("结束编辑");
+    save_map_btn->setText("发布地图");
+    save_map_btn->setEnabled(true);
+    save_map_btn->setToolTip("保存 staging 地图并发布新的不可变版本");
+    re_save_map_btn->setEnabled(false);
+    tools_edit_map_widget->show();
+    QMessageBox::information(this, "编辑会话", "已创建地图编辑会话。发布将生成新版本，不会覆盖正式地图。");
+  });
+  connect(map_lifecycle_client_, &MapLifecycleClient::editPublished,
+          [this, reset_edit_ui](bool success, const QString &message, const QString &map_id, const QString &map_version) {
+    if (!success) {
+      QMessageBox::warning(this, "地图发布失败", message);
+      return;
+    }
+    QMessageBox::information(this, "地图已发布",
+                             QString("已生成 %1/%2。请在下一次导航启动时选择该地图。").arg(map_id, map_version));
+    reset_edit_ui();
+  });
+  connect(map_lifecycle_client_, &MapLifecycleClient::editCancelled,
+          [this, reset_edit_ui](bool success, const QString &message) {
+    if (!success) QMessageBox::warning(this, "取消编辑失败", message);
+    reset_edit_ui();
+  });
+
   connect(save_map_btn, &QToolButton::clicked, [this]() {
-    
-    // 保存占用栅格地图
+    if (edit_session_id_.isEmpty()) return;
+    bool accepted = false;
+    const QString target_id = QInputDialog::getText(
+        this, "发布地图", "地图 ID", QLineEdit::Normal,
+        QString::fromStdString(GET_CONFIG_VALUE("agt_map_id", "")), &accepted).trimmed();
+    if (!accepted || target_id.isEmpty()) return;
+    const QString target_version = QInputDialog::getText(
+        this, "发布地图", "新版本", QLineEdit::Normal, "v001-edited", &accepted).trimmed();
+    if (!accepted || target_version.isEmpty()) return;
     auto occ_map = display_manager_->GetOccupancyMap();
     occ_map.Save(map_path_);
-    
-    // 保存拓扑地图
     auto topology_map = display_manager_->GetTopologyMap();
-
-
-    std::string topology_path = map_path_ + ".topology";
-    Config::ConfigManager::Instance()->WriteTopologyMap(topology_path, topology_map);
-    
-    //发送到ROS
-    PUBLISH(MSG_ID_TOPOLOGY_MAP_UPDATE, topology_map);
-
-    // 显示保存成功对话框
-    QMessageBox::information(this, "保存成功", 
-                            "地图文件已成功保存到:\n" + QString::fromStdString(map_path_),
-                            QMessageBox::Ok);
+    Config::ConfigManager::Instance()->WriteTopologyMap(map_path_ + ".topology", topology_map);
+    map_lifecycle_client_->PublishEdit(edit_session_id_, target_id, target_version, false);
   });
 
   connect(open_map_btn, &QToolButton::clicked, [this]() {
@@ -978,20 +1012,21 @@ void MainWindow::setupUi() {
   });
 
   
-  connect(edit_map_btn, &QToolButton::clicked, [this, tools_edit_map_widget, edit_map_btn]() {
-    if (edit_map_btn->text() == "编辑地图") {
-      display_manager_->SetEditMapMode(Display::MapEditMode::kMoveCursor);
-      edit_map_btn->setText("结束编辑");
-      tools_edit_map_widget->show();
-    } else {
-      display_manager_->SetEditMapMode(Display::MapEditMode::kStopEdit);
-      edit_map_btn->setText("编辑地图");
-      tools_edit_map_widget->hide();
-      // 隐藏添加机器人位置按钮
-      Display::ViewManager* view_manager = dynamic_cast<Display::ViewManager*>(display_manager_->GetViewPtr());
-      if (view_manager) {
-        view_manager->ShowAddRobotPosButton(false);
+  connect(edit_map_btn, &QToolButton::clicked, [this, edit_map_btn]() {
+    if (edit_session_id_.isEmpty()) {
+      const QString map_id = QString::fromStdString(GET_CONFIG_VALUE("agt_map_id", "")).trimmed();
+      const QString map_version = QString::fromStdString(GET_CONFIG_VALUE("agt_map_version", "")).trimmed();
+      if (map_id.isEmpty() || map_version.isEmpty()) {
+        QMessageBox::warning(this, "无法编辑地图", "当前 HMI 未绑定 Map Package。");
+        return;
       }
+      released_map_path_ = map_path_;
+      edit_map_btn->setEnabled(false);
+      map_lifecycle_client_->StartEdit(map_id, map_version);
+      return;
+    }
+    if (QMessageBox::question(this, "结束编辑", "放弃当前未发布的编辑会话？") == QMessageBox::Yes) {
+      map_lifecycle_client_->CancelEdit(edit_session_id_);
     }
   });
   connect(add_point_btn, &QToolButton::clicked, [this]() {

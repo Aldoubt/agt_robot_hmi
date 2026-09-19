@@ -7,7 +7,6 @@
  * @FilePath: ////src/display/robot_map.cpp
  */
 #include "display/display_occ_map.h"
-#include <QtConcurrent>
 #include <algorithm>
 #include <iostream>
 #include "core/framework/framework.h"
@@ -19,10 +18,14 @@ DisplayOccMap::DisplayOccMap(const std::string &display_type,
     : VirtualDisplay(display_type, z_value, parent_name) {
   SetMoveEnable(true);
   SUBSCRIBE(MSG_ID_OCCUPANCY_MAP, [this](const OccupancyMap& data) {
-    map_data_ = data;
-    ParseOccupyMap();
-    LOG_INFO("map update calling:" << map_image_.width() << " "
-            << map_image_.height() << std::endl);
+    // ROS callbacks can arrive on the channel executor thread. QImage and
+    // QGraphicsItem state must be changed only by this object's GUI thread.
+    QMetaObject::invokeMethod(this, [this, data]() {
+      map_data_ = data;
+      ParseOccupyMap();
+      LOG_INFO("map update calling:" << map_image_.width() << " "
+              << map_image_.height() << std::endl);
+    }, Qt::QueuedConnection);
   });
 }
 bool DisplayOccMap::SetDisplayConfig(const std::string &config_name,
@@ -44,8 +47,9 @@ void DisplayOccMap::paint(QPainter *painter,
   painter->drawImage(0, 0, map_image_);
 }
 void DisplayOccMap::ParseOccupyMap() {
-  QtConcurrent::run([this]() {
-    // Eigen::matrix 坐标系与QImage坐标系不同,这里行列反着遍历
+  // This method is dispatched through this QObject's GUI event loop. Keep the
+  // image and graphics-item updates serialized with paint() and edit tools.
+  // Eigen::matrix 坐标系与QImage坐标系不同,这里行列反着遍历
     //QImage坐标系
     // **************x
     // *
@@ -88,7 +92,6 @@ void DisplayOccMap::ParseOccupyMap() {
       CenterOnScene(mapToScene(x, y));
       init_flag_ = true;
     }
-  });
 }
 void DisplayOccMap::EraseMapRange(const QPointF &pose, double range) {
   float x = pose.x();

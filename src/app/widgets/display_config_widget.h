@@ -57,6 +57,7 @@ class DisplayConfigWidget : public QWidget {
   QWidget *CreateImagePage();
   QWidget *CreateRobotPage();
   QWidget *CreateMapPage();
+  QWidget *CreateMapLifecyclePage();
   QWidget *CreateKeyValuePage();
   void RefreshKeyValueTab();
   void UpdateDisplayVisibility(const std::string &display_name, bool visible);
@@ -100,6 +101,11 @@ class DisplayConfigWidget : public QWidget {
   QLabel *rosbridge_ip_label_{nullptr};
   QLabel *rosbridge_port_label_{nullptr};
   QLabel *map_path_label_{nullptr};
+  class MapLifecycleClient *map_lifecycle_client_{nullptr};
+  QTableWidget *map_table_{nullptr};
+  QLabel *map_lifecycle_status_{nullptr};
+  void RefreshMapLifecycle();
+  void SelectedMap(QString *map_id, QString *version) const;
   QPushButton *map_browse_btn_{nullptr};
   QPushButton *image_add_btn_{nullptr};
   QPushButton *key_value_add_btn_{nullptr};

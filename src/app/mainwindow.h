@@ -88,7 +88,10 @@ class MainWindow : public QMainWindow {
   QPoint drag_position_;
   std::map<std::string, RatioLayoutedFrame *> image_frame_map_;
   std::string map_path_{"./map"};
+  std::string released_map_path_;
+  QString edit_session_id_;
   DisplayConfigWidget *display_config_widget_{nullptr};
+  class MapLifecycleClient *map_lifecycle_client_{nullptr};
   ads::CDockWidget *settings_dock_{nullptr};
   DiagnosticDockWidget *diagnostic_dock_widget_{nullptr};
   ads::CDockWidget *diagnostic_dock_{nullptr};

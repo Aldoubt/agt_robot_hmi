@@ -57,7 +57,8 @@ struct MapConfig {
   // /map has no threshold fields, so retain the standard Nav2 defaults when
   // it is saved back out by the HMI.
   double occupied_thresh{0.65};
-  double free_thresh{0.25};
+  // Preserve PGM value 205 as OccupancyGrid unknown (50 / 255 ~= 0.196078).
+  double free_thresh{0.196};
   MapMode mode{TRINARY};
   MapConfig() {
     origin.resize(3);

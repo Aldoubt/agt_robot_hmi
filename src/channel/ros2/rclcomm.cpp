@@ -27,7 +27,10 @@ rclcomm::rclcomm() {
   SET_DEFAULT_TOPIC_NAME(DISPLAY_GLOBAL_PATH, "/plan")
   SET_DEFAULT_TOPIC_NAME(DISPLAY_LOCAL_PATH, "/local_plan")
   SET_DEFAULT_TOPIC_NAME(DISPLAY_ROBOT, "/odom")
-  SET_DEFAULT_TOPIC_NAME(MSG_ID_SET_ROBOT_SPEED, "/cmd_vel")
+  // Navigation and HMI manual control are deliberately separate sources.
+  // agt_cmd_vel_guard selects this topic only after the operator enables
+  // manual mode; Nav2 retains the default /cmd_vel ownership.
+  SET_DEFAULT_TOPIC_NAME(MSG_ID_SET_ROBOT_SPEED, "/agt/hmi/cmd_vel")
   SET_DEFAULT_TOPIC_NAME(MSG_ID_BATTERY_STATE, "/battery")
   SET_DEFAULT_TOPIC_NAME(MSG_ID_DIAGNOSTIC, "/diagnostics")
   SET_DEFAULT_TOPIC_NAME(DISPLAY_ROBOT_FOOTPRINT, "/local_costmap/published_footprint")

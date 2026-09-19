@@ -17,6 +17,7 @@
 #include <QThread>
 #include <csignal>
 #include <iostream>
+#include <rclcpp/rclcpp.hpp>
 #include "logger/logger.h"
 #include "mainwindow.h"
 
@@ -32,6 +33,9 @@ void signalHandler(int signal) {
 }
 
 int main(int argc, char *argv[]) {
+  if (!rclcpp::ok()) {
+    rclcpp::init(argc, argv);
+  }
   QApplication a(argc, argv);
   g_app = &a;
 
@@ -41,5 +45,9 @@ int main(int argc, char *argv[]) {
   MainWindow main_window;
   main_window.show();
   LOG_INFO("ros_qt5_gui_app init!");
-  return a.exec();
+  const int result = a.exec();
+  if (rclcpp::ok()) {
+    rclcpp::shutdown();
+  }
+  return result;
 }

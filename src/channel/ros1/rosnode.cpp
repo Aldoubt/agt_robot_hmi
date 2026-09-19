@@ -21,7 +21,7 @@ RosNode::RosNode(/* args */) {
   SET_DEFAULT_TOPIC_NAME(DISPLAY_GLOBAL_PATH, "/move_base/DWAPlannerROS/global_plan")
   SET_DEFAULT_TOPIC_NAME(DISPLAY_LOCAL_PATH, "/move_base/DWAPlannerROS/local_plan")
   SET_DEFAULT_TOPIC_NAME(DISPLAY_ROBOT, "/odom")
-  SET_DEFAULT_TOPIC_NAME(MSG_ID_SET_ROBOT_SPEED, "/cmd_vel")
+  SET_DEFAULT_TOPIC_NAME(MSG_ID_SET_ROBOT_SPEED, "/agt/hmi/cmd_vel")
   SET_DEFAULT_TOPIC_NAME(MSG_ID_BATTERY_STATE, "/battery")
   SET_DEFAULT_TOPIC_NAME(MSG_ID_DIAGNOSTIC, "/diagnostics")
   SET_DEFAULT_TOPIC_NAME("MoveBaseStatus", "/move_base/status")
