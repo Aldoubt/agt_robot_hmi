@@ -1,4 +1,9 @@
 build/*
+install/
+log/
+.pytest_cache/
+__pycache__/
+*.pyc
 *.user
 *.autosave
 compile_commands.json

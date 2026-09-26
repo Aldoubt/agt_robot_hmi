@@ -49,5 +49,7 @@ enable_testing()
 
 # modules
 add_subdirectory(src)
-add_subdirectory(install)
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/install/CMakeLists.txt")
+  add_subdirectory(install)
+endif()
 ament_package()
