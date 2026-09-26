@@ -3,6 +3,7 @@ include_directories(${OpenCV_INCLUDE_DIRS})
 find_package(Qt5 COMPONENTS Widgets Concurrent Svg REQUIRED)
 find_package(ament_cmake REQUIRED)
 find_package(agt_robot_interfaces REQUIRED)
+find_package(agt_mission_interfaces REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 
@@ -40,7 +41,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
   ${CMAKE_CURRENT_BINARY_DIR}
 )
 target_link_libraries(${PROJECT_NAME} Qt5::Widgets Qt5::Core Qt5::Concurrent Qt5::Svg dockwidget::dockwidget nlohmann_json::nlohmann_json common basic framework channel agt_ros_interface ${OpenCV_LIBS})
-ament_target_dependencies(${PROJECT_NAME} agt_robot_interfaces rclcpp std_msgs)
+ament_target_dependencies(${PROJECT_NAME} agt_robot_interfaces agt_mission_interfaces rclcpp std_msgs)
 set_target_properties(${PROJECT_NAME} PROPERTIES
 RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
 LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"

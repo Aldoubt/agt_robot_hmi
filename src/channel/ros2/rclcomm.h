@@ -14,6 +14,11 @@
 #include <cv_bridge/cv_bridge.h>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
+#include <agt_navigation_interfaces/action/navigate_to.hpp>
+#include <agt_navigation_interfaces/msg/navigation_health.hpp>
+#include <agt_mission_interfaces/action/execute_route.hpp>
+#include <agt_mission_interfaces/msg/mission_state.hpp>
+#include <std_srvs/srv/trigger.hpp>
 #include "algorithm.h"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "geometry_msgs/msg/pose_with_covariance_stamped.hpp"
@@ -69,10 +74,19 @@ class rclcomm : public VirtualChannelNode {
 
  private:
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr speed_publisher_;
-  rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr
-      reloc_pose_publisher_;
-  rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr
-      nav_goal_publisher_;
+  using NavigateTo = agt_navigation_interfaces::action::NavigateTo;
+  using ExecuteRoute = agt_mission_interfaces::action::ExecuteRoute;
+  rclcpp_action::Client<NavigateTo>::SharedPtr navigation_client_;
+  rclcpp_action::Client<ExecuteRoute>::SharedPtr mission_client_;
+  rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr mission_stop_client_;
+  rclcpp::Subscription<agt_mission_interfaces::msg::MissionState>::SharedPtr
+      mission_state_subscriber_;
+  rclcpp::Subscription<agt_navigation_interfaces::msg::NavigationHealth>::SharedPtr
+      navigation_health_subscriber_;
+  std::atomic_bool navigation_ready_{false};
+  std::atomic<int64_t> navigation_health_ms_{0};
+  void SubmitMissionRoute(const std::vector<TopologyMap::PointInfo> &points);
+  void StopMissionRoute();
   rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_subscriber_;
   rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr
       local_cost_map_subscriber_;

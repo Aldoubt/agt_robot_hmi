@@ -246,16 +246,9 @@ void RosbridgeComm::ConnectAsync() {
   
   // ========== 发布ROS话题 ==========
   
-  // 导航目标点发布者
-  auto nav_goal_publisher = std::make_unique<ROSTopic>(*ros_bridge_, GET_TOPIC_NAME(DISPLAY_GOAL), "geometry_msgs/PoseStamped", 10);
-  nav_goal_publisher->Advertise();
-  publishers_[GET_TOPIC_NAME(DISPLAY_GOAL)] = std::move(nav_goal_publisher);
-  
-  // 重定位位姿发布者
-  auto reloc_pose_publisher = std::make_unique<ROSTopic>(*ros_bridge_, GET_TOPIC_NAME(MSG_ID_SET_RELOC_POSE), "geometry_msgs/PoseWithCovarianceStamped", 10);
-  reloc_pose_publisher->Advertise();
-  publishers_[GET_TOPIC_NAME(MSG_ID_SET_RELOC_POSE)] = std::move(reloc_pose_publisher);
-  
+  // ROSBridge remains observation-only for Navigation V4. No goal or
+  // manual relocalization publisher may bypass public capability actions.
+
   // 机器人速度发布者
   auto speed_publisher = std::make_unique<ROSTopic>(*ros_bridge_, GET_TOPIC_NAME(MSG_ID_SET_ROBOT_SPEED), "geometry_msgs/Twist", 10);
   speed_publisher->Advertise();
@@ -272,6 +265,10 @@ void RosbridgeComm::ConnectAsync() {
     LOG_INFO("recv nav goal pose:" << pose);
     PubNavGoal(pose);
   });
+  SUBSCRIBE(MSG_ID_EXECUTE_MISSION_ROUTE,
+            [this](const std::vector<TopologyMap::PointInfo>&) {
+              LOG_WARN("ROSBridge cannot execute Mission V4 routes; select the ROS2 channel");
+            });
   
   SUBSCRIBE(MSG_ID_SET_RELOC_POSE, [this](const basic::RobotPose& pose) {
     LOG_INFO("recv reloc pose:" << pose);
@@ -1152,111 +1149,13 @@ void RosbridgeComm::ImageCallback(const ROSBridgePublishMsg &msg, const std::str
  * @param pose 机器人位姿
  */
 void RosbridgeComm::PubRelocPose(const basic::RobotPose &pose) {
-  rapidjson::Document msg;
-  msg.SetObject();
-  auto &allocator = msg.GetAllocator();
-  
-  // 构建消息头
-  rapidjson::Value header(rapidjson::kObjectType);
-  header.AddMember("frame_id", rapidjson::Value("map", allocator), allocator);
-  
-  // 设置当前时间戳
-  ROSTime now = ROSTime::now();
-  rapidjson::Value stamp(rapidjson::kObjectType);
-  stamp.AddMember("secs", static_cast<uint64_t>(now.sec_), allocator);
-  stamp.AddMember("nsecs", static_cast<uint64_t>(now.nsec_), allocator);
-  header.AddMember("stamp", stamp, allocator);
-  
-  msg.AddMember("header", header, allocator);
-  
-  // 构建位姿信息
-  rapidjson::Value pose_value(rapidjson::kObjectType);
-  
-  // 位置
-  rapidjson::Value position(rapidjson::kObjectType);
-  position.AddMember("x", pose.x, allocator);
-  position.AddMember("y", pose.y, allocator);
-  position.AddMember("z", 0.0, allocator);
-  pose_value.AddMember("position", position, allocator);
-  
-  // 方向（四元数）
-  rapidjson::Value orientation(rapidjson::kObjectType);
-  double qw = std::cos(pose.theta / 2.0);
-  double qz = std::sin(pose.theta / 2.0);
-  orientation.AddMember("x", 0.0, allocator);
-  orientation.AddMember("y", 0.0, allocator);
-  orientation.AddMember("z", qz, allocator);
-  orientation.AddMember("w", qw, allocator);
-  pose_value.AddMember("orientation", orientation, allocator);
-  
-  // 协方差矩阵（36个元素）
-  rapidjson::Value covariance(rapidjson::kArrayType);
-  for (int i = 0; i < 36; i++) {
-    covariance.PushBack(0.0, allocator);
-  }
-
-  rapidjson::Value pose_with_covariance(rapidjson::kObjectType);
-  pose_with_covariance.AddMember("pose", pose_value, allocator);
-  pose_with_covariance.AddMember("covariance", covariance, allocator);
-
-  msg.AddMember("pose", pose_with_covariance, allocator);
-  
-  // 发布消息
-  auto it = publishers_.find(GET_TOPIC_NAME(MSG_ID_SET_RELOC_POSE));
-  if (it != publishers_.end()) {
-    it->second->Publish(msg);
-  }
+  (void)pose;
+  LOG_WARN("Navigation V4 disables manual /initialpose through ROSBridge");
 }
 
-/**
- * @brief 发布导航目标点
- * @param pose 目标位姿
- */
 void RosbridgeComm::PubNavGoal(const basic::RobotPose &pose) {
-  rapidjson::Document msg;
-  msg.SetObject();
-  auto &allocator = msg.GetAllocator();
-  
-  // 构建消息头
-  rapidjson::Value header(rapidjson::kObjectType);
-  header.AddMember("frame_id", rapidjson::Value("map", allocator), allocator);
-  
-  // 设置当前时间戳
-  ROSTime now = ROSTime::now();
-  rapidjson::Value stamp(rapidjson::kObjectType);
-  stamp.AddMember("secs", static_cast<uint64_t>(now.sec_), allocator);
-  stamp.AddMember("nsecs", static_cast<uint64_t>(now.nsec_), allocator);
-  header.AddMember("stamp", stamp, allocator);
-  
-  msg.AddMember("header", header, allocator);
-  
-  // 构建位姿信息
-  rapidjson::Value pose_value(rapidjson::kObjectType);
-
-  // 位置
-  rapidjson::Value position(rapidjson::kObjectType);
-  position.AddMember("x", pose.x, allocator);
-  position.AddMember("y", pose.y, allocator);
-  position.AddMember("z", 0.0, allocator);
-  pose_value.AddMember("position", position, allocator);
-
-  // 方向（四元数）
-  rapidjson::Value orientation(rapidjson::kObjectType);
-  double qw = std::cos(pose.theta / 2.0);
-  double qz = std::sin(pose.theta / 2.0);
-  orientation.AddMember("x", 0.0, allocator);
-  orientation.AddMember("y", 0.0, allocator);
-  orientation.AddMember("z", qz, allocator);
-  orientation.AddMember("w", qw, allocator);
-  pose_value.AddMember("orientation", orientation, allocator);
-
-  msg.AddMember("pose", pose_value, allocator);
-  
-  // 发布消息
-  auto it = publishers_.find(GET_TOPIC_NAME(DISPLAY_GOAL));
-  if (it != publishers_.end()) {
-    it->second->Publish(msg);
-  }
+  (void)pose;
+  LOG_WARN("ROSBridge navigation control is unavailable; use the ROS2 channel and Navigation Capability");
 }
 
 /**

@@ -26,10 +26,13 @@ class NavGoalTableView : public QTableView {
   void StartTaskChain(bool is_loop);
   void StopTaskChain();
   void UpdateRobotPose(const RobotPose &pose);
+  void SetMissionState(uint32_t index, uint8_t state, const QString &waypoint);
   bool LoadTaskChain(const std::string &name);
   bool SaveTaskChain(const std::string &name);
  signals:
   void signalSendNavGoal(const RobotPose &pose);
+  void signalStartRoute(const std::vector<TopologyMap::PointInfo> &points);
+  void signalStopRoute();
   void signalTaskFinish();
 
  private:

@@ -10,6 +10,9 @@ file(GLOB_RECURSE INCLUDE_FILE CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR} *.h
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
+find_package(agt_navigation_interfaces REQUIRED)
+find_package(agt_mission_interfaces REQUIRED)
+find_package(std_srvs REQUIRED)
 find_package(action_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(tf2 REQUIRED)
@@ -32,7 +35,7 @@ PUBLIC
 ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
-ament_target_dependencies(${TARGET_NAME} PUBLIC rclcpp rclcpp_action action_msgs Boost nav_msgs tf2 tf2_geometry_msgs tf2_ros sensor_msgs tf2_kdl cv_bridge diagnostic_msgs)
+ament_target_dependencies(${TARGET_NAME} PUBLIC rclcpp rclcpp_action agt_navigation_interfaces agt_mission_interfaces std_srvs action_msgs Boost nav_msgs tf2 tf2_geometry_msgs tf2_ros sensor_msgs tf2_kdl cv_bridge diagnostic_msgs)
 target_link_libraries(${TARGET_NAME} 
 PUBLIC
 basic

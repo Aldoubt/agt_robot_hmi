@@ -5,7 +5,6 @@
 #include <QLabel>
 #include <QPushButton>
 #include <QSignalBlocker>
-#include <QtConcurrent>
 #include <set>
 #include <fstream>
 #include <nlohmann/json.hpp>
@@ -114,41 +113,25 @@ void NavGoalTableView::AddItem() {
   setIndexWidget(table_model_->index(row, 3), button_run);
 }
 void NavGoalTableView::StartTaskChain(bool is_loop) {
+  if (is_loop) {
+    LOG_WARN("Unbounded HMI task-chain loops are disabled in Mission V4");
+  }
+  std::vector<TopologyMap::PointInfo> points;
+  for (int row = 0; row < table_model_->rowCount(); ++row) {
+    auto *combo = qobject_cast<QComboBox *>(indexWidget(model()->index(row, 0)));
+    auto *label = qobject_cast<QLabel *>(indexWidget(model()->index(row, 1)));
+    if (combo == nullptr || label == nullptr) continue;
+    auto point = topologyMap_.GetPoint(combo->currentText().toStdString());
+    if (point.name.empty()) {
+      label->setText("Point Not Found!");
+      return;
+    }
+    label->setText("Queued");
+    points.push_back(point);
+  }
+  if (points.empty()) return;
   is_task_chain_running_ = true;
-  QtConcurrent::run([this, is_loop]() {
-    do {
-      for (int row = 0; row < table_model_->rowCount(); ++row) {
-        QComboBox *comboBoxName =
-            static_cast<QComboBox *>(indexWidget(model()->index(row, 0)));
-        QLabel *label_status =
-            static_cast<QLabel *>(indexWidget(model()->index(row, 1)));
-        label_status->setText("Running");
-        TopologyMap::PointInfo point =
-            topologyMap_.GetPoint(comboBoxName->currentText().toStdString());
-        if (point.name == "") {
-          label_status->setText("Point Not Found!");
-          continue;
-        }
-        RobotPose target_pose = point.ToRobotPose();
-        emit signalSendNavGoal(target_pose);
-        RobotPose diff = absoluteDifference(target_pose, robot_pose_);
-        while (diff.mod() > 0.2 || fabs(diff.theta) > deg2rad(15)) {
-          LOG_INFO("Task chain is running diff:" << diff << " mode:" << diff.mod() << " deg:" << rad2deg(fabs(diff.theta)));
-          diff = absoluteDifference(target_pose, robot_pose_);
-          if (!is_task_chain_running_) {
-            emit signalTaskFinish();
-            LOG_INFO("Task chain is stopped");
-            return;
-          }
-          QThread::msleep(100);
-        }
-        label_status->setText("Finish");
-      }
-    } while (is_loop);
-
-    LOG_INFO("Task chain is finished");
-    emit signalTaskFinish();
-  });
+  emit signalStartRoute(points);
 }
 bool NavGoalTableView::LoadTaskChain(const std::string &name) {
   // 清空模型
@@ -222,8 +205,27 @@ bool NavGoalTableView::SaveTaskChain(const std::string &name) {
 void NavGoalTableView::StopTaskChain() {
   if (is_task_chain_running_) {
     is_task_chain_running_ = false;
+    emit signalStopRoute();
   }
 }
 void NavGoalTableView::UpdateRobotPose(const RobotPose &pose) {
   robot_pose_ = pose;
+}
+void NavGoalTableView::SetMissionState(uint32_t index, uint8_t state,
+                                       const QString &waypoint) {
+  if (index < static_cast<uint32_t>(table_model_->rowCount())) {
+    auto *label = qobject_cast<QLabel *>(indexWidget(model()->index(index, 1)));
+    if (label != nullptr) {
+      label->setText(state == 2 ? "Waiting Task" :
+                     state == 3 ? "Paused" :
+                     state == 4 ? "Completed" :
+                     state == 5 ? "Failed" :
+                     state == 6 ? "Canceled" : "Navigating");
+    }
+  }
+  if (state == 4 || state == 5 || state == 6) {
+    is_task_chain_running_ = false;
+    emit signalTaskFinish();
+  }
+  (void)waypoint;
 }

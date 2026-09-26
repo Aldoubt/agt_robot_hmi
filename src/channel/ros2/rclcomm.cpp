@@ -63,11 +63,29 @@ bool rclcomm::Start() {
   auto sub_laser_obt = rclcpp::SubscriptionOptions();
   sub_laser_obt.callback_group = callback_group_laser;
 
-  nav_goal_publisher_ = node->create_publisher<geometry_msgs::msg::PoseStamped>(
-      GET_TOPIC_NAME(DISPLAY_GOAL), 10);
-  reloc_pose_publisher_ =
-      node->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(
-          GET_TOPIC_NAME(MSG_ID_SET_RELOC_POSE), 10);
+  navigation_client_ = rclcpp_action::create_client<NavigateTo>(node, "/navigation/navigate_to");
+  mission_client_ = rclcpp_action::create_client<ExecuteRoute>(node, "/mission/execute_route");
+  mission_stop_client_ = node->create_client<std_srvs::srv::Trigger>("/mission/stop");
+  mission_state_subscriber_ =
+      node->create_subscription<agt_mission_interfaces::msg::MissionState>(
+          "/mission/state", rclcpp::QoS(1).reliable().transient_local(),
+          [this](agt_mission_interfaces::msg::MissionState::SharedPtr state) {
+            RCLCPP_INFO(node->get_logger(), "Mission route=%s waypoint=%s state=%u code=%s",
+                        state->route_id.c_str(), state->waypoint_id.c_str(),
+                        state->state, state->error_code.c_str());
+            PUBLISH(MSG_ID_MISSION_STATE, *state);
+          });
+  navigation_health_subscriber_ =
+      node->create_subscription<agt_navigation_interfaces::msg::NavigationHealth>(
+          "/navigation/health", rclcpp::QoS(1).reliable().transient_local(),
+          [this](agt_navigation_interfaces::msg::NavigationHealth::SharedPtr health) {
+            navigation_ready_ = health->status == health->READY &&
+                health->platform_ready && health->lidar_alive && health->imu_alive &&
+                health->odom_alive && health->localized &&
+                health->nav2_active;
+            navigation_health_ms_ = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count();
+          });
   speed_publisher_ = node->create_publisher<geometry_msgs::msg::Twist>(
       GET_TOPIC_NAME(MSG_ID_SET_ROBOT_SPEED), 10);
   map_subscriber_ = node->create_subscription<nav_msgs::msg::OccupancyGrid>(
@@ -191,6 +209,13 @@ bool rclcomm::Start() {
   SUBSCRIBE(MSG_ID_SET_NAV_GOAL_POSE, [this](const basic::RobotPose& pose) {
     std::cout << "recv nav goal pose:" << pose << std::endl;
     PubNavGoal(pose);
+  });
+  SUBSCRIBE(MSG_ID_EXECUTE_MISSION_ROUTE,
+            [this](const std::vector<TopologyMap::PointInfo>& points) {
+              SubmitMissionRoute(points);
+            });
+  SUBSCRIBE(MSG_ID_STOP_MISSION_ROUTE, [this](const bool&) {
+    StopMissionRoute();
   });
   SUBSCRIBE(MSG_ID_SET_RELOC_POSE, [this](const basic::RobotPose& pose) {
     std::cout << "recv reloc pose:" << pose << std::endl;
@@ -520,17 +545,17 @@ void rclcomm::map_callback(const nav_msgs::msg::OccupancyGrid::SharedPtr msg) {
 }
 
 void rclcomm::PubRelocPose(const basic::RobotPose &pose) {
-  geometry_msgs::msg::PoseWithCovarianceStamped geo_pose;
-  geo_pose.header.frame_id = "map";
-  geo_pose.header.stamp = node->get_clock()->now();
-  geo_pose.pose.pose.position.x = pose.x;
-  geo_pose.pose.pose.position.y = pose.y;
-  tf2::Quaternion q;
-  q.setRPY(0, 0, pose.theta);
-  geo_pose.pose.pose.orientation = tf2::toMsg(q);
-  reloc_pose_publisher_->publish(geo_pose);
+  (void)pose;
+  RCLCPP_WARN(node->get_logger(), "Manual /initialpose is disabled in Navigation V4; use automatic relocalization.");
 }
 void rclcomm::PubNavGoal(const basic::RobotPose &pose) {
+  const auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::steady_clock::now().time_since_epoch()).count();
+  if (!navigation_ready_ || now_ms - navigation_health_ms_ > 1500 ||
+      !navigation_client_ || !navigation_client_->action_server_is_ready()) {
+    RCLCPP_WARN(node->get_logger(), "Navigation Capability is not READY; HMI goal rejected.");
+    return;
+  }
   geometry_msgs::msg::PoseStamped geo_pose;
   geo_pose.header.frame_id = "map";
   geo_pose.header.stamp = node->get_clock()->now();
@@ -539,7 +564,61 @@ void rclcomm::PubNavGoal(const basic::RobotPose &pose) {
   tf2::Quaternion q;
   q.setRPY(0, 0, pose.theta);
   geo_pose.pose.orientation = tf2::toMsg(q);
-  nav_goal_publisher_->publish(geo_pose);
+  NavigateTo::Goal goal;
+  goal.pose = geo_pose;
+  auto options = rclcpp_action::Client<NavigateTo>::SendGoalOptions();
+  options.result_callback = [logger = node->get_logger()](
+      const rclcpp_action::ClientGoalHandle<NavigateTo>::WrappedResult &result) {
+    if (result.result) {
+      RCLCPP_INFO(logger, "Navigation result: success=%s code=%s message=%s",
+                  result.result->success ? "true" : "false",
+                  result.result->error_code.c_str(), result.result->message.c_str());
+    }
+  };
+  navigation_client_->async_send_goal(goal, options);
+}
+void rclcomm::SubmitMissionRoute(const std::vector<TopologyMap::PointInfo> &points) {
+  const auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::steady_clock::now().time_since_epoch()).count();
+  if (points.empty() || !navigation_ready_ || now_ms - navigation_health_ms_ > 1500 ||
+      !mission_client_ || !mission_client_->action_server_is_ready()) {
+    RCLCPP_WARN(node->get_logger(), "Mission/Navigation Capability is not READY; route rejected.");
+    return;
+  }
+  ExecuteRoute::Goal goal;
+  goal.route.route_id = "hmi_" + std::to_string(node->get_clock()->now().nanoseconds());
+  for (const auto &point : points) {
+    agt_mission_interfaces::msg::Waypoint waypoint;
+    waypoint.id = point.name;
+    waypoint.pose.header.frame_id = "map";
+    waypoint.pose.header.stamp = node->get_clock()->now();
+    waypoint.pose.pose.position.x = point.x;
+    waypoint.pose.pose.position.y = point.y;
+    tf2::Quaternion q;
+    q.setRPY(0, 0, point.theta);
+    waypoint.pose.pose.orientation = tf2::toMsg(q);
+    waypoint.task_group.handler = "none";
+    waypoint.on_failure = "abort";
+    waypoint.navigation_max_attempts = 1;
+    goal.route.waypoints.push_back(waypoint);
+  }
+  auto options = rclcpp_action::Client<ExecuteRoute>::SendGoalOptions();
+  options.result_callback = [logger = node->get_logger()](
+      const rclcpp_action::ClientGoalHandle<ExecuteRoute>::WrappedResult &result) {
+    if (result.result) {
+      RCLCPP_INFO(logger, "Mission result: success=%s completed=%u code=%s",
+                  result.result->success ? "true" : "false",
+                  result.result->completed_waypoints, result.result->error_code.c_str());
+    }
+  };
+  mission_client_->async_send_goal(goal, options);
+}
+void rclcomm::StopMissionRoute() {
+  if (!mission_stop_client_ || !mission_stop_client_->service_is_ready()) {
+    RCLCPP_WARN(node->get_logger(), "Mission stop service unavailable");
+    return;
+  }
+  mission_stop_client_->async_send_request(std::make_shared<std_srvs::srv::Trigger::Request>());
 }
 void rclcomm::PubRobotSpeed(const basic::RobotSpeed &speed) {
   geometry_msgs::msg::Twist twist;

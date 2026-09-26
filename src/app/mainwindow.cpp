@@ -30,6 +30,8 @@
 #include "ui_mainwindow.h"
 #include <QButtonGroup>
 #include <QMessageBox>
+#include <QStatusBar>
+#include <agt_mission_interfaces/msg/mission_state.hpp>
 #include <QDockWidget>
 #include <QInputDialog>
 
@@ -156,6 +158,18 @@ void MainWindow::registerChannel() {
     if (diagnostic_dock_widget_) {
       diagnostic_dock_widget_->SetSnapshot(snap);
     }
+  });
+  SUBSCRIBE(MSG_ID_MISSION_STATE,
+            [this](const agt_mission_interfaces::msg::MissionState &state) {
+    QMetaObject::invokeMethod(this, [this, state]() {
+      nav_goal_table_view_->SetMissionState(
+          state.current_index, state.state, QString::fromStdString(state.waypoint_id));
+      statusBar()->showMessage(QString("Mission %1 / %2: %3 %4")
+          .arg(QString::fromStdString(state.route_id))
+          .arg(QString::fromStdString(state.waypoint_id))
+          .arg(state.state)
+          .arg(QString::fromStdString(state.error_code)));
+    }, Qt::QueuedConnection);
   });
 }
 
@@ -828,6 +842,15 @@ void MainWindow::setupUi() {
           [this](const RobotPose &pose) {
             PUBLISH(MSG_ID_SET_NAV_GOAL_POSE, pose);
           });
+  connect(nav_goal_table_view_, &NavGoalTableView::signalStartRoute,
+          [this](const std::vector<TopologyMap::PointInfo> &points) {
+            PUBLISH(MSG_ID_EXECUTE_MISSION_ROUTE, points);
+          });
+  connect(nav_goal_table_view_, &NavGoalTableView::signalStopRoute,
+          [this]() { PUBLISH(MSG_ID_STOP_MISSION_ROUTE, true); });
+  loop_task_checkbox->setChecked(false);
+  loop_task_checkbox->setEnabled(false);
+  loop_task_checkbox->setToolTip(tr("Mission V4 requires bounded routes; automatic looping is disabled."));
   connect(btn_load_task_chain, &QPushButton::clicked, [this]() {
     QString fileName = QFileDialog::getOpenFileName(nullptr, "Open JSON file",
                                                     "", "JSON files (*.json)",
