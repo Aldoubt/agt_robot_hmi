@@ -151,33 +151,25 @@ make -j$(nproc)
 
 ### Run
 
-#### Method 1: Using Startup Script (Recommended)
+The ROS 2 workspace build is the supported path. The former `install/`
+launcher scripts (`start.sh` / `start.bat`) are no longer part of the
+repository; colcon installs the executable with its RPATH already set.
 
-After building, the startup script will be automatically copied to the `build` directory:
+#### Method 1: colcon (Recommended)
 
 ```bash
-cd build
-./start.sh
+cd ~/ros2_ws
+colcon build --packages-select agt_robot_hmi
+source install/setup.bash
+ros2 run agt_robot_hmi agt_robot_hmi
 ```
 
-The startup script will automatically set library file paths and launch the program.
-
-#### Method 2: Manual Run
+#### Method 2: Run the standalone CMake build
 
 ```bash
 cd build
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./lib
-./ros_qt5_gui_app
-```
-
-#### Method 3: Run After Installation {#method-3-run-after-installation}
-
-```bash
-cd build
-make install
-
-cd ../install/bin
-./start.sh
+./agt_robot_hmi
 ```
 
 </details>
@@ -268,32 +260,12 @@ cmake --install . --config Release
 
 ### Run
 
-#### Method 1: Using Startup Script (Recommended)
-
-After building, the startup script will be automatically copied to the `build` directory:
-
-```powershell
-cd build
-.\start.bat
-```
-
-The startup script will automatically set library file paths and launch the program.
-
-#### Method 2: Manual Run
+`start.bat` has been removed together with the `install/` tree. Run the
+built executable directly:
 
 ```powershell
 cd build
-.\ros_qt5_gui_app.exe
-```
-
-#### Method 3: Run After Installation {#method-3-run-after-installation-windows}
-
-```powershell
-cd build
-cmake --install . --config Release
-
-cd ..\install\bin
-.\start.bat
+.\agt_robot_hmi.exe
 ```
 
 </details>
