@@ -7,9 +7,8 @@ set(yaml-cpp_GIT_REPOSITORY
 
 FetchContent_Declare(
     yaml-cpp
-    GIT_REPOSITORY ${yaml-cpp_GIT_REPOSITORY}
-    GIT_TAG "f7320141120f720aecc4c32be25586e7da9eb978"
-    GIT_SHALLOW FALSE)
+    URL "https://codeload.github.com/jbeder/yaml-cpp/tar.gz/f7320141120f720aecc4c32be25586e7da9eb978"
+    URL_HASH SHA256=2fd3bf695ccc056835a70dd6d3046312cc1004e8338b8b5c91646918a27b7ef6)
 
 FetchContent_GetProperties(yaml-cpp)
 if(NOT yaml-cpp_POPULATED)

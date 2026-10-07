@@ -1,5 +1,6 @@
 // AGT modification, 2026-10-07. See upstream LICENSE (GPL v2 text).
 #pragma once
+#include <QComboBox>
 #include <QFormLayout>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -18,10 +19,10 @@
 class FieldPanel : public QWidget {
   Q_OBJECT
  signals:
-  void mapActivated(const QString &path);
+  void mapActivated(const QString& path);
 
  public:
-  explicit FieldPanel(NavGoalTableView *table, QWidget *parent = nullptr) : QWidget(parent), table_(table), client_(this) {
+  explicit FieldPanel(NavGoalTableView* table, QWidget* parent = nullptr) : QWidget(parent), table_(table), client_(this) {
     auto layout = new QVBoxLayout(this);
     layout->addWidget(new QLabel("AGT YHS CONTROL"));
     status_ = new QLabel("Runtime OFFLINE");
@@ -39,6 +40,12 @@ class FieldPanel : public QWidget {
     button(system, "Activate CAN", "CAN_UP");
     button(system, "Deactivate CAN", "CAN_DOWN");
     button(system, "IDLE", "IDLE");
+    auto manual = new QPushButton("Manual Control (Motion Guard)");
+    system->addWidget(manual);
+    connect(manual, &QPushButton::clicked, this, [this]() { client_.request({{"command", "CONTROL_MODE"}, {"mode", "manual"}}, [this](QJsonObject r) { details_->setPlainText(QJsonDocument(r).toJson()); if (!r["ok"].toBool()) QMessageBox::warning(this, "AGT", r["error"].toString()); }); });
+    auto automatic = new QPushButton("Return to Navigation Control");
+    system->addWidget(automatic);
+    connect(automatic, &QPushButton::clicked, this, [this]() { client_.request({{"command", "CONTROL_MODE"}, {"mode", "navigation"}}, [this](QJsonObject r) { details_->setPlainText(QJsonDocument(r).toJson()); if (!r["ok"].toBool()) QMessageBox::warning(this, "AGT", r["error"].toString()); }); });
     auto mapping = page(tabs, "Mapping");
     auto form = new QFormLayout();
     map_id_ = new QLineEdit("field_map");
@@ -46,6 +53,29 @@ class FieldPanel : public QWidget {
     form->addRow("Map Bundle ID", map_id_);
     form->addRow("Version", version_);
     mapping->addLayout(form);
+    auto bundles = new QComboBox();
+    mapping->addWidget(bundles);
+    auto refresh = new QPushButton("Refresh Map Bundles");
+    mapping->addWidget(refresh);
+    connect(refresh, &QPushButton::clicked, this, [this, bundles]() {
+      client_.request({{"command", "LIST_MAPS"}}, [this, bundles](QJsonObject response) {
+        if (!response["ok"].toBool()) {
+          QMessageBox::warning(this, "AGT", response["error"].toString());
+          return;
+        }
+        bundles->clear();
+        for (auto item : response["result"].toArray()) {
+          auto map = item.toObject();
+          bundles->addItem(map["map_bundle_id"].toString() + " / " + map["map_version"].toString() + " (" + map["status"].toString() + ")", map);
+        }
+      });
+    });
+    connect(bundles, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, bundles](int index) {
+      if (index < 0) return;
+      auto map = bundles->itemData(index).toJsonObject();
+      map_id_->setText(map["map_bundle_id"].toString());
+      version_->setText(map["map_version"].toString());
+    });
     button(mapping, "Preflight", "PREFLIGHT");
     button(mapping, "Start Mapping", "START_MAPPING");
     button(mapping, "Stop & Build Map", "STOP_MAPPING");
@@ -107,21 +137,21 @@ class FieldPanel : public QWidget {
   }
 
  private:
-  NavGoalTableView *table_;
+  NavGoalTableView* table_;
   FieldClient client_;
   QLabel *status_, *devices_, *mapping_status_, *record_status_;
   QLineEdit *map_id_, *version_, *route_id_;
-  QPlainTextEdit *details_;
-  QPushButton *start_;
-  QTimer *timer_;
+  QPlainTextEdit* details_;
+  QPushButton* start_;
+  QTimer* timer_;
   bool polling_ = false;
-  QVBoxLayout *page(QTabWidget *tabs, QString title) {
+  QVBoxLayout* page(QTabWidget* tabs, QString title) {
     auto w = new QWidget();
     auto layout = new QVBoxLayout(w);
     tabs->addTab(w, title);
     return layout;
   }
-  QPushButton *button(QVBoxLayout *layout, QString label, QString cmd) {
+  QPushButton* button(QVBoxLayout* layout, QString label, QString cmd) {
     auto b = new QPushButton(label);
     layout->addWidget(b);
     connect(b, &QPushButton::clicked, this, [this, cmd]() { command(cmd); });
@@ -132,7 +162,7 @@ class FieldPanel : public QWidget {
     if (name == "SAVE_ROUTE") {
       try {
         request["route"] = table_->field_model_->toRoute(route_id_->text(), table_->field_binding_);
-      } catch (const std::exception &e) {
+      } catch (const std::exception& e) {
         QMessageBox::warning(this, "Route", e.what());
         return;
       }
@@ -195,14 +225,15 @@ class FieldPanel : public QWidget {
       }
       auto sensor = s["sensors"].toObject();
       auto base = s["base"].toObject();
-      text += QString("MID360 Ethernet/UDP\nInterface: %1 | Host: %2 | Sensor: %3\nDriver: Livox | Topic: /livox/lidar\nCAN: %4 | bitrate: %5\nROS1 master: %6\nProfile: %7")
+      text += QString("MID360 Ethernet/UDP\nInterface: %1 | Host: %2 | Sensor: %3\nDriver: Livox | Topic: %8\nCAN: %4 | bitrate: %5\nROS1 master: %6\nProfile: %7")
                   .arg(sensor["interface"].toString("CONFIG_REQUIRED"))
                   .arg(sensor["host_ip"].toString("CONFIG_REQUIRED"))
                   .arg(sensor["sensor_ip"].toString("CONFIG_REQUIRED"))
                   .arg(base["can_interface"].toString("CONFIG_REQUIRED"))
                   .arg(base["can_bitrate"].isNull() ? "CONFIG_REQUIRED" : QString::number(base["can_bitrate"].toInt()))
                   .arg(base["ros1_master_uri"].toString("CONFIG_REQUIRED"))
-                  .arg(s["profiles"].toString());
+                  .arg(s["profiles"].toString())
+                  .arg(s["topics"].toObject()["lidar"].toString());
       devices_->setText(text);
       QString stage = s["mapping"].toString();
       mapping_status_->setText("Mapping: " + stage + "\nDuration: " + QString::number(s["mapping_duration"].toDouble(), 'f', 1) + " s\n" + (stage == "READY" ? "3D Mapping PASS\nLocalization Assets PASS\n2D Navigation PASS\nMap Review CONFIRMED" : "Finish → Verify → Localization Assets → Grid → Review → Ready"));

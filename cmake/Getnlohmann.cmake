@@ -7,9 +7,8 @@ set(nlohmann_json_GIT_REPOSITORY
 
 FetchContent_Declare(
     nlohmann_json
-    GIT_REPOSITORY ${nlohmann_json_GIT_REPOSITORY}
-    GIT_TAG "55f93686c01528224f448c19128836e7df245f72"
-    GIT_SHALLOW FALSE)
+    URL "https://codeload.github.com/nlohmann/json/tar.gz/55f93686c01528224f448c19128836e7df245f72"
+    URL_HASH SHA256=67f4cdd9ca930c9c1e130af4a437c7fc98fab77a2846fc2d2a14b4943831f8ef)
 
 FetchContent_GetProperties(nlohmann_json)
 if(NOT nlohmann_json_POPULATED)

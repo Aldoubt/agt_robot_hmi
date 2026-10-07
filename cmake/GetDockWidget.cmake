@@ -7,9 +7,8 @@ set(dockwidget_GIT_REPOSITORY
 
 FetchContent_Declare(
     dockwidget
-    GIT_REPOSITORY ${dockwidget_GIT_REPOSITORY}
-    GIT_TAG "a16d17a8bf375127847ac8f40af1ebcdb841b13c"
-    GIT_SHALLOW FALSE)
+    URL "https://codeload.github.com/githubuser0xFFFF/Qt-Advanced-Docking-System/tar.gz/a16d17a8bf375127847ac8f40af1ebcdb841b13c"
+    URL_HASH SHA256=3a18ad2b2cfa521882f942ec02031718c0efad7f62ad3d39749bce7984974b13)
 
 FetchContent_GetProperties(dockwidget)
 if(NOT dockwidget_POPULATED)
