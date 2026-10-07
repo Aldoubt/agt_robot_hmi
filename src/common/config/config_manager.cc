@@ -1,5 +1,6 @@
 #include "config/config_manager.h"
 #include <QFile>
+#include "msg/msg_info.h"
 #include <boost/dll.hpp>
 #include <fstream>
 #include <nlohmann/json.hpp>
@@ -26,6 +27,8 @@ bool ConfigManager::writeStringToFile(const std::string &filePath,
 
 // #define CHECK_DEFALUT
 ConfigManager::ConfigManager(/* args */) {
+  if (qEnvironmentVariableIsSet("AGT_HMI_CONFIG"))
+    config_path_ = qEnvironmentVariable("AGT_HMI_CONFIG").toStdString();
   Init(config_path_);
 }
 void ConfigManager::Init(const std::string &config_path) {
@@ -72,6 +75,9 @@ bool ConfigManager::StoreConfigUnlocked() {
   return true;
 }
 std::string ConfigManager::GetTopicName(const std::string &frame_name) {
+  // Field mode cannot restore a legacy direct chassis speed topic from saved config.
+  if (qEnvironmentVariableIsSet("AGT_FIELD_SOCKET") && frame_name == MSG_ID_SET_ROBOT_SPEED)
+    return "/agt/hmi/cmd_vel";
   auto iter = std::find_if(config_root_.display_config.begin(),
                            config_root_.display_config.end(),
                            [&frame_name](const auto &item) {

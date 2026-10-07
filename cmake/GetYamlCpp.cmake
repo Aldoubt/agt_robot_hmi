@@ -8,8 +8,8 @@ set(yaml-cpp_GIT_REPOSITORY
 FetchContent_Declare(
     yaml-cpp
     GIT_REPOSITORY ${yaml-cpp_GIT_REPOSITORY}
-    GIT_TAG "0.8.0"
-    GIT_SHALLOW TRUE)
+    GIT_TAG "f7320141120f720aecc4c32be25586e7da9eb978"
+    GIT_SHALLOW FALSE)
 
 FetchContent_GetProperties(yaml-cpp)
 if(NOT yaml-cpp_POPULATED)

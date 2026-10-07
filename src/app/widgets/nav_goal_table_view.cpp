@@ -1,8 +1,10 @@
+// AGT field-mode modification, 2026-10-07; retain upstream LICENSE.
 #include "widgets/nav_goal_table_view.h"
 #include <QComboBox>
 #include <QFileDialog>
 #include <QHeaderView>
 #include <QLabel>
+#include <QFile>
 #include <QPushButton>
 #include <QtConcurrent>
 #include <fstream>
@@ -12,7 +14,13 @@
 #include "logger/logger.h"
 NavGoalTableView::NavGoalTableView(QWidget *_parent_widget)
     : QTableView(_parent_widget) {
-  table_model_ = new QStandardItemModel();
+  is_task_chain_running_ = false;
+  if (!qEnvironmentVariable("AGT_FIELD_SOCKET").isEmpty()) {
+    field_model_=new FieldRouteModel(this);table_model_=field_model_;setModel(field_model_);
+    horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
+    setSelectionBehavior(QAbstractItemView::SelectRows);setSelectionMode(QAbstractItemView::SingleSelection);return;
+  }
+  table_model_ = new QStandardItemModel(this);
   setModel(table_model_);
   QStringList table_h_headers;
   table_h_headers << "点位名"
@@ -45,6 +53,13 @@ void NavGoalTableView::UpdateTopologyMap(const TopologyMap &_topology_map) {
   topologyMap_ = _topology_map;
 }
 void NavGoalTableView::UpdateSelectPoint(const TopologyMap::PointInfo &point) {
+  if (FieldMode()) {
+    if (!isEnabled())return;
+    if(field_model_->rowCount()==0)AddItem();int row=field_model_->rowCount()-1;
+    field_model_->setData(field_model_->index(row,0),QString::fromStdString(point.name));
+    field_model_->setData(field_model_->index(row,1),point.x);field_model_->setData(field_model_->index(row,2),point.y);
+    field_model_->setData(field_model_->index(row,3),point.theta);return;
+  }
   if (!this->isEnabled())
     return;
 
@@ -57,6 +72,17 @@ void NavGoalTableView::UpdateSelectPoint(const TopologyMap::PointInfo &point) {
   }
 }
 void NavGoalTableView::AddItem() {
+  if (FieldMode()) {
+    int next = 1;
+    while (true) {
+      const QString id = "P" + QString::number(next++);
+      bool found = false;
+      for (int row = 0; row < field_model_->rowCount(); ++row)
+        if (field_model_->item(row, 0)->text() == id) found = true;
+      if (!found) { field_model_->addPoint(id); break; }
+    }
+    return;
+  }
   QComboBox *comboBox = new QComboBox();
   for (auto point : topologyMap_.points) {
     comboBox->addItem(point.name.c_str());
@@ -82,6 +108,7 @@ void NavGoalTableView::AddItem() {
   setIndexWidget(table_model_->index(row, 3), button_run);
 }
 void NavGoalTableView::StartTaskChain(bool is_loop) {
+  if(FieldMode()){auto client=new FieldClient(this);client->request({{"command","START"}},[this,client](auto response){if(!response["ok"].toBool())qWarning()<<response["error"].toString();client->deleteLater();emit signalTaskFinish();});return;}
   is_task_chain_running_ = true;
   QtConcurrent::run([this, is_loop]() {
     do {
@@ -119,6 +146,7 @@ void NavGoalTableView::StartTaskChain(bool is_loop) {
   });
 }
 bool NavGoalTableView::LoadTaskChain(const std::string &name) {
+  if(FieldMode()){QFile file(QString::fromStdString(name));if(!file.open(QIODevice::ReadOnly))return false;return field_model_->fromRoute(QJsonDocument::fromJson(file.readAll()).object(),field_binding_);}
   // 清空模型
   table_model_->removeRows(0, table_model_->rowCount());
   std::ifstream file(name);
@@ -169,6 +197,8 @@ bool NavGoalTableView::LoadTaskChain(const std::string &name) {
   return true;
 }
 bool NavGoalTableView::SaveTaskChain(const std::string &name) {
+  if(FieldMode()){QFile file(QString::fromStdString(name));if(!file.open(QIODevice::WriteOnly))return false;file.write(QJsonDocument(field_model_->toRoute("field_route",field_binding_)).toJson());return true;}
+  task_chain_.points.clear();
   for (int row = 0; row < table_model_->rowCount(); ++row) {
     QComboBox *comboBoxName =
         static_cast<QComboBox *>(indexWidget(model()->index(row, 0)));
@@ -188,6 +218,7 @@ bool NavGoalTableView::SaveTaskChain(const std::string &name) {
   return Config::ConfigManager::writeStringToFile(name, pretty_json);
 }
 void NavGoalTableView::StopTaskChain() {
+  if(FieldMode()){auto client=new FieldClient(this);client->request({{"command","CANCEL"}},[client](auto){client->deleteLater();});return;}
   if (is_task_chain_running_) {
     is_task_chain_running_ = false;
   }

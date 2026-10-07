@@ -3,7 +3,7 @@ include(FetchContent)
 message(STATUS "get topology_msgs ...")
 
 set(topology_msgs_DOWNLOAD_URL
-    "https://github.com/chengyangkj/topology_msgs/archive/refs/heads/main.zip"
+    "https://github.com/chengyangkj/topology_msgs/archive/7ba0d2a3ea0de9e8c416c64d1dab10e5299a5acb.zip"
     CACHE STRING "")
 
 FetchContent_Declare(

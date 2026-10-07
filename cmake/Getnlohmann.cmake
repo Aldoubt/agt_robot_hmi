@@ -8,8 +8,8 @@ set(nlohmann_json_GIT_REPOSITORY
 FetchContent_Declare(
     nlohmann_json
     GIT_REPOSITORY ${nlohmann_json_GIT_REPOSITORY}
-    GIT_TAG "v3.12.0"
-    GIT_SHALLOW TRUE)
+    GIT_TAG "55f93686c01528224f448c19128836e7df245f72"
+    GIT_SHALLOW FALSE)
 
 FetchContent_GetProperties(nlohmann_json)
 if(NOT nlohmann_json_POPULATED)

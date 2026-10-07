@@ -25,7 +25,7 @@ rclcomm::rclcomm() {
   SET_DEFAULT_TOPIC_NAME(DISPLAY_GLOBAL_PATH, "/plan")
   SET_DEFAULT_TOPIC_NAME(DISPLAY_LOCAL_PATH, "/local_plan")
   SET_DEFAULT_TOPIC_NAME(DISPLAY_ROBOT, "/odom")
-  SET_DEFAULT_TOPIC_NAME(MSG_ID_SET_ROBOT_SPEED, "/cmd_vel")
+  SET_DEFAULT_TOPIC_NAME(MSG_ID_SET_ROBOT_SPEED, "/agt/hmi/cmd_vel")
   SET_DEFAULT_TOPIC_NAME(MSG_ID_BATTERY_STATE, "/battery")
   SET_DEFAULT_TOPIC_NAME(MSG_ID_DIAGNOSTIC, "/diagnostics")
   SET_DEFAULT_TOPIC_NAME(DISPLAY_ROBOT_FOOTPRINT, "/local_costmap/published_footprint")
@@ -62,7 +62,7 @@ bool rclcomm::Start() {
       node->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(
           GET_TOPIC_NAME(MSG_ID_SET_RELOC_POSE), 10);
   speed_publisher_ = node->create_publisher<geometry_msgs::msg::Twist>(
-      GET_TOPIC_NAME(MSG_ID_SET_ROBOT_SPEED), 10);
+      qEnvironmentVariableIsSet("AGT_FIELD_SOCKET") ? "/agt/hmi/cmd_vel" : GET_TOPIC_NAME(MSG_ID_SET_ROBOT_SPEED), 10);
   map_subscriber_ = node->create_subscription<nav_msgs::msg::OccupancyGrid>(
       GET_TOPIC_NAME(DISPLAY_MAP),
       rclcpp::QoS(rclcpp::KeepLast(1)).reliable().transient_local(),

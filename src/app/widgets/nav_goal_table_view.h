@@ -1,3 +1,5 @@
+#pragma once
+// AGT field-mode modification, 2026-10-07; retain upstream LICENSE.
 #include <QDebug>
 #include <QHeaderView>
 #include <QPainter>
@@ -5,6 +7,8 @@
 #include <QTableView>
 #include <mutex>
 #include "config/task_chain.h"
+#include "widgets/field_route_model.h"
+#include "widgets/field_client.h"
 #include "map/topology_map.h"
 using namespace basic;
 class NavGoalTableView : public QTableView {
@@ -13,6 +17,10 @@ class NavGoalTableView : public QTableView {
   explicit NavGoalTableView(QWidget *_parent_widget = nullptr);
   ~NavGoalTableView() override;
 
+ public:
+  FieldRouteModel *field_model_{nullptr};
+  QJsonObject field_binding_;
+  bool FieldMode() const { return field_model_!=nullptr; }
  private:
   QStandardItemModel *table_model_;
   TopologyMap topologyMap_;

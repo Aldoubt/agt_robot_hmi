@@ -32,6 +32,7 @@
 #include <QMessageBox>
 
 #include "widgets/speed_ctrl.h"
+#include "widgets/field_panel.h"
 #include "widgets/display_config_widget.h"
 #include "widgets/diagnostic_dock_widget.h"
 #include "msg/diagnostic_snapshot.h"
@@ -722,6 +723,15 @@ void MainWindow::setupUi() {
   /////////////////////////////////////////////////////////导航任务列表
   QWidget *task_list_widget = new QWidget();
   nav_goal_table_view_ = new NavGoalTableView();
+  if(nav_goal_table_view_->FieldMode()) {
+    auto field_dock=new ads::CDockWidget("AGT YHS CONTROL");
+    auto panel=new FieldPanel(nav_goal_table_view_,this);
+    field_dock->setWidget(panel);
+    connect(panel,&FieldPanel::mapActivated,this,[this](const QString &path){LoadMap(path.toStdString());});
+    dock_manager_->addDockWidget(ads::DockWidgetArea::RightDockWidgetArea,field_dock,center_docker_area_);
+    ui->menuView->addAction(field_dock->toggleViewAction());
+  }
+
   QVBoxLayout *horizontalLayout_13 = new QVBoxLayout();
   horizontalLayout_13->addWidget(nav_goal_table_view_);
   task_list_widget->setLayout(horizontalLayout_13);
@@ -807,7 +817,7 @@ void MainWindow::setupUi() {
   nav_goal_list_dock_widget->setMaximumSize(480, 9999);
   dock_manager_->addDockWidget(ads::DockWidgetArea::RightDockWidgetArea,
                                nav_goal_list_dock_widget, center_docker_area_);
-  nav_goal_list_dock_widget->toggleView(false);
+  nav_goal_list_dock_widget->toggleView(nav_goal_table_view_->FieldMode());
   connect(nav_goal_table_view_, &NavGoalTableView::signalSendNavGoal,
           [this](const RobotPose &pose) {
             PUBLISH(MSG_ID_SET_NAV_GOAL_POSE, pose);
@@ -848,6 +858,7 @@ void MainWindow::setupUi() {
   connect(
       btn_add_one_goal, &QPushButton::clicked,
       [this, nav_goal_list_dock_widget]() { nav_goal_table_view_->AddItem(); });
+  if(nav_goal_table_view_->FieldMode()){btn_start_task_chain->hide();loop_task_checkbox->hide();btn_load_task_chain->hide();btn_save_task_chain->hide();}
   connect(btn_start_task_chain, &QPushButton::clicked,
           [this, btn_start_task_chain, loop_task_checkbox]() {
             if (btn_start_task_chain->text() == "Start Task Chain") {

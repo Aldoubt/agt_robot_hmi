@@ -8,8 +8,8 @@ set(dockwidget_GIT_REPOSITORY
 FetchContent_Declare(
     dockwidget
     GIT_REPOSITORY ${dockwidget_GIT_REPOSITORY}
-    GIT_TAG "4.4.0"
-    GIT_SHALLOW TRUE)
+    GIT_TAG "a16d17a8bf375127847ac8f40af1ebcdb841b13c"
+    GIT_SHALLOW FALSE)
 
 FetchContent_GetProperties(dockwidget)
 if(NOT dockwidget_POPULATED)
