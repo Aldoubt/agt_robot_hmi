@@ -1,3 +1,11 @@
+# AGT YHS Control — Qt 独立 fork
+
+[中文使用说明](docs/YHS_FIELD_USER_GUIDE_ZH.md) · [YHS 分支](https://github.com/Aldoubt/agt_robot_hmi/tree/feature/yhs-field-appliance-v1) · [集成工程](https://github.com/Aldoubt/agt_navigation_v3/tree/feature/yhs-field-appliance-v1)
+
+这是 Ros_Qt5_Gui_App 的独立 fork，保留原项目源码、LICENSE 和 attribution。YHS 分支包含已验证的 Qt Field 控制、Map Bundle、任务命令和 waypoint dwell 编辑；现场安装从集成工程执行 `./install.sh`，随后双击 **AGT YHS Control**。真实硬件验收仍为 PENDING。
+
+---
+
 <!--
  * @Author: chengyangkj chengyangkj@qq.com
  * @Date: 2023-09-02 07:23:43
