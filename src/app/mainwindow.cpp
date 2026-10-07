@@ -29,6 +29,7 @@
 #include "config/config_manager.h"
 #include "ui_mainwindow.h"
 #include <QButtonGroup>
+#include <QSplitter>
 #include <QMessageBox>
 
 #include "widgets/speed_ctrl.h"
@@ -182,7 +183,9 @@ void MainWindow::setupUi() {
       "SF Pro Text",
       ".AppleSystemUIFont",
       "Segoe UI",
-      "Microsoft YaHei UI"};
+      "Microsoft YaHei UI",
+      "Noto Sans CJK SC",
+      "Noto Sans CJK JP"};
   const QStringList availableFontFamilies = QFontDatabase().families();
   QString selectedFontFamily = "Microsoft YaHei UI";
   for (const auto &fontFamily : preferredFontFamilies) {
@@ -724,9 +727,11 @@ void MainWindow::setupUi() {
   QWidget *task_list_widget = new QWidget();
   nav_goal_table_view_ = new NavGoalTableView();
   if(nav_goal_table_view_->FieldMode()) {
-    auto field_dock=new ads::CDockWidget("AGT YHS CONTROL");
+    auto field_dock=new ads::CDockWidget("AGT YHS 控制中心");
     auto panel=new FieldPanel(nav_goal_table_view_,this);
     field_dock->setWidget(panel);
+    field_dock->setMinimumSizeHintMode(ads::CDockWidget::MinimumSizeHintFromContent);
+    field_dock->setMinimumWidth(400);
     connect(panel,&FieldPanel::mapActivated,this,[this](const QString &path){LoadMap(path.toStdString());});
     dock_manager_->addDockWidget(ads::DockWidgetArea::RightDockWidgetArea,field_dock,center_docker_area_);
     ui->menuView->addAction(field_dock->toggleViewAction());
@@ -735,7 +740,7 @@ void MainWindow::setupUi() {
   QVBoxLayout *horizontalLayout_13 = new QVBoxLayout();
   horizontalLayout_13->addWidget(nav_goal_table_view_);
   task_list_widget->setLayout(horizontalLayout_13);
-  ads::CDockWidget *nav_goal_list_dock_widget = new ads::CDockWidget("Task");
+  ads::CDockWidget *nav_goal_list_dock_widget = new ads::CDockWidget(tr("导航任务"));
   
   // 现代化按钮样式
   QString modernButtonStyle = R"(
@@ -760,7 +765,7 @@ void MainWindow::setupUi() {
     }
   )";
   
-  QPushButton *btn_add_one_goal = new QPushButton("Add Point");
+  QPushButton *btn_add_one_goal = new QPushButton(tr("添加航点"));
   btn_add_one_goal->setStyleSheet(modernButtonStyle);
   
   QHBoxLayout *horizontalLayout_15 = new QHBoxLayout();
@@ -1138,6 +1143,32 @@ void MainWindow::RestoreState() {
   this->restoreState(settings.value("mainWindow/State").toByteArray());
   dock_manager_->loadPerspectives(settings);
   dock_manager_->openPerspective("history");
+  // Repair narrow legacy dock layouts once at startup; users can still resize docks.
+  if (nav_goal_table_view_->FieldMode()) {
+    QTimer::singleShot(100, this, [this]() {
+      auto panel = findChild<FieldPanel*>();
+      if (!panel || panel->visibleRegion().boundingRect().width() >= 380) return;
+      QWidget* child = panel;
+      for (QWidget* parent = child->parentWidget(); parent; child = parent, parent = parent->parentWidget()) {
+        auto splitter = qobject_cast<QSplitter*>(parent);
+        if (!splitter || splitter->orientation() != Qt::Horizontal) continue;
+        int index = splitter->indexOf(child);
+        if (index < 0) continue;
+        auto sizes = splitter->sizes();
+        sizes[index] = 460;
+        for (int i = 0; i < sizes.size(); ++i) {
+          if (i == index) continue;
+          auto area = splitter->widget(i);
+          if (area->isAncestorOf(nav_goal_table_view_)) sizes[i] = 360;
+          else if (area->isAncestorOf(display_config_widget_)) sizes[i] = 280;
+          else if (area->isAncestorOf(speed_ctrl_widget_)) sizes[i] = 180;
+          else sizes[i] = qMax(400, splitter->width() - 1300);
+        }
+        splitter->setSizes(sizes);
+        break;
+      }
+    });
+  }
 }
 void MainWindow::updateOdomInfo(RobotState state) {
   // 转向灯

@@ -75,59 +75,61 @@ Mock 数据只能在 Mock 模式激活。Mock 成功不代表真实 CAN、雷达
 
 双击 **AGT YHS Control**，或在 Linux 桌面终端运行 `./agt up`。Launcher 封装 Runtime 检查、容器启动和 X11 授权；不需要手工 `xhost` 或 `source`。
 
-上位机保留原有 QGraphicsView、地图、路径、机器人位姿、拓扑点、单点导航和 2D Pose Estimate，新增 Field 控制面板：
+上位机保留原有 QGraphicsView、地图、路径、机器人位姿、拓扑点、单点导航和 2D Pose Estimate，新增中文 YHS 控制面板，沿用主界面的浅色背景、蓝色圆角按钮与字体。页面内容支持滚动，红色“停止全部任务”按钮固定在底部。设备最近时间戳可将鼠标悬停在状态区查看；诊断页保留原始协议字段，便于排错。
 
-- **System**：传感器、CAN、YHS、wheel odom、Runtime 状态和受控启停。
-- **Mapping**：Preflight、Start Mapping、Stop & Build Map、Review、Confirm、Activate。
-- **Navigation**：选择地图、启动自动定位、路线保存/加载、任务控制。
-- **Recording**：开始/停止录制，显示持续时间、磁盘空间和 bag 路径。
-- **Diagnostics**：诊断与报告。
+控制面板分为：
+
+- **系统**：传感器、CAN、YHS、wheel odom、Runtime 状态和受控启停。
+- **建图**：Preflight、Start Mapping、Stop & Build Map、Review、Confirm、Activate。
+- **导航**：选择地图、启动自动定位、路线保存/加载、任务控制。
+- **录制**：开始/停止录制，显示持续时间、磁盘空间和 bag 路径。
+- **诊断**：诊断与报告。
 
 启动失败查看 `~/agt/logs/desktop-launch.log`，再执行 `./agt doctor --report`。不要在错误状态下反复发送运动命令。
 
 ## 5. 建图
 
-1. System 中检查 MID360 与 IMU；MID360 使用 Ethernet/UDP，直接进入 ROS2 Runtime，不设置串口。
-2. Mapping 中填写新 Map Bundle ID 和 version，执行 **Preflight**。
-3. 点击 **Start Mapping**，然后用已验收的物理遥控手动驾驶。Qt teleop 不会为了建图绕过现有定位门禁。
-4. 点击 **Stop & Build Map**。等待 clean finish、PGO、export、verification、localization assets、2D grid 全部完成；不要直接关闭容器代替 finish。
-5. 点击 **Review Map**，在现有 MapStudio 中处理 2D 地图、禁行区域和 refinement。
-6. MapStudio 中 **Confirm & Save**，关闭 MapStudio，再回 Qt 点击 **Confirm & Seal Bundle**。
-7. 看到 Mapping/Localization Assets/2D Map PASS、Review CONFIRMED 和 Bundle READY 后，点击 **Activate**。
+1. “系统”页中检查 MID360 与 IMU；MID360 使用 Ethernet/UDP，直接进入 ROS2 Runtime，不设置串口。
+2. “建图”页中填写新 Map Bundle ID 和 version，执行 **启动检查**。
+3. 点击 **开始建图**，然后用已验收的物理遥控手动驾驶。Qt teleop 不会为了建图绕过现有定位门禁。
+4. 点击 **停止并生成地图**。等待 clean finish、PGO、export、verification、localization assets、2D grid 全部完成；不要直接关闭容器代替 finish。
+5. 点击 **审核地图（MapStudio）**，在现有 MapStudio 中处理 2D 地图、禁行区域和 refinement。
+6. MapStudio 中 **Confirm & Save**，关闭 MapStudio，再回 Qt 点击 **确认并封存地图包**。
+7. 看到 Mapping/Localization Assets/2D Map PASS、Review CONFIRMED 和 Bundle READY 后，点击 **激活地图**。
 
 3D map、原始 keyframe patches 和 optimized poses 不被 2D 编辑修改。不要打开冻结文件直接改内容；需要变更时创建新版本。地图存放在 `~/agt/maps/<id>/<version>/`。
 
 ## 6. 定位与导航
 
-1. Navigation 中 **Refresh Map Bundles**，选择 ID/version，**Activate**。
-2. 点击 **Start Localization / Navigation Mode**。
+1. “导航”页中 **刷新地图包**，选择 ID/version，**激活地图**。
+2. 点击 **启动定位 / 进入导航模式**。
 3. 等待 `RELOCALIZING → READY`。正常流程是自动 3D-BBS + GICP；已有 **2D Pose Estimate** 只作为 debug/fallback。
 4. 未 READY、gateway 断连、错误 map hash/version 或资产缺失时，禁止开始任务。
 
 **机器人当前位姿、路线第一个点、Manual Initial Pose 是三个不同概念。** 添加或移动路线第一个点不会修改机器人定位。
 
-单点目标也交给 Mission Executor/Nav2，速度仍经过 Motion Guard。Manual Control 按钮只有在地图、定位和 gateway 门禁满足且没有活动任务时才可用。
+单点目标也交给 Mission Executor/Nav2，速度仍经过 Motion Guard。“手动控制（运动保护）”按钮只有在地图、定位和 gateway 门禁满足且没有活动任务时才可用。
 
 ## 7. 多航点与每点停顿
 
-在已有导航目标表中添加点、编辑 X/Y/Yaw、调整顺序和 Wait(s)，支持删除、保存、加载。
+在已有导航目标表中添加点、编辑 X/Y/Yaw、调整顺序和 停留（秒），支持删除、保存、加载。
 
-| 点 | Wait(s) | Action |
+| 点 | 停留（秒） | Action |
 |---|---:|---|
 | P1 | 5 | wait |
 | P2 | 20 | wait |
 | P3 | 0 | wait |
 
-Yaw 使用 **弧度**；Wait(s) 默认 0，必须是有限非负数。本版 Action 只支持 `wait`，没有机械臂任务。
+Yaw 使用 **弧度**；停留（秒） 默认 0，必须是有限非负数。本版 Action 只支持 `wait`，没有机械臂任务。
 
-先 **Save Route**，再 **Start Mission**。路线持久化在 `~/agt/routes/`，绑定 Map Bundle ID/version/hash，不能在其他地图上静默执行。
+先 **保存路线**，再 **开始任务**。路线持久化在 `~/agt/routes/`，绑定 Map Bundle ID/version/hash，不能在其他地图上静默执行。
 
 执行顺序：Nav2 确认到达 P1 → 停车确认 → 等待 5 秒 → P2 → 等待 20 秒 → P3 → COMPLETED。
 
-- **Pause**：取消当前导航目标，或暂停剩余 dwell。
-- **Resume**：重新检查地图、定位、gateway 和 cancellation barrier，再恢复。
-- **Cancel**：结束本次任务，不继续下一个点。
-- **STOP ALL**：停止受控任务和 Runtime 工作流；**不能替代物理急停**。
+- **暂停**：取消当前导航目标，或暂停剩余 dwell。
+- **继续**：重新检查地图、定位、gateway 和 cancellation barrier，再恢复。
+- **取消**：结束本次任务，不继续下一个点。
+- **停止全部任务**：停止受控任务和 Runtime 工作流；**不能替代物理急停**。
 
 定位 LOST、Nav2 失败或 gateway 断连时，任务进入 ERROR，修复原因后重新加载/启动；不会自动跳过失败点。
 
@@ -160,3 +162,12 @@ CAN 受控操作为 `./agt can up` / `./agt can down`，bitrate 未配置时拒�
 本 fork 的 YHS 分支基于 upstream `b0825e3cba3e7186cba8a6b83ff230be37c8b1fb`，保留 upstream LICENSE/attribution。LICENSE 文件是 GNU GPL Version 2 文本；分发前需单独审核许可证事实与义务，本说明不作法律兼容性结论。
 
 Qt 构建依赖 ROS2/Qt5，完整环境由集成工程 Dockerfile 提供。开发模式使用 Dockerfile.dev，将本 fork mount 到 `/opt/hmi`，增量运行 `appliance/scripts/build_hmi.sh`。Qt 只调用稳定 Runtime API，不复制 Navigation Core 或 Mapping 算法。
+
+## 界面更新验证（中文与 Qt 风格）
+
+- 中文覆盖控制面板标题、五个页面、按钮、设备状态、定位/任务状态、航点表头与等待动作显示。地图/路线 ID、ROS topic、原始诊断 JSON 保留实际值。
+- `wait` 仅显示为“等待”；路线文件仍保存 `action: wait`，地图绑定与任务门禁保持不变。
+- 容器基础镜像安装 `fonts-noto-cjk`，主窗体使用已有字体选择逻辑并增加 Noto Sans CJK 回退。已有旧镜像须重新构建才能包含新字体和界面代码。
+- 验证：Humble 容器内 Qt 主程序增量构建通过；`tests/field` CTest 通过；UID 1000 的 offscreen 实际程序截图检查通过。真实显示服务器、底盘和传感器验收仍待现场完成。
+
+![中文控制面板（实际 Qt 程序，Mock 状态）](images/yhs_control_zh_mock.png)

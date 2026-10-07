@@ -8,16 +8,20 @@
 
 class FieldRouteModel : public QStandardItemModel {
  public:
-  explicit FieldRouteModel(QObject *parent = nullptr) : QStandardItemModel(parent) {
-    setHorizontalHeaderLabels({"ID", "X", "Y", "Yaw (rad)", "Wait(s)", "Action"});
+  explicit FieldRouteModel(QObject* parent = nullptr) : QStandardItemModel(parent) {
+    setHorizontalHeaderLabels({"ID", "X", "Y", "朝向（弧度）", "停留（秒）", "动作"});
   }
   void addPoint(QString id, double x = 0, double y = 0, double yaw = 0, double dwell = 0) {
-    QList<QStandardItem *> items;
+    QList<QStandardItem*> items;
     for (QString text : {id, QString::number(x, 'g', 15), QString::number(y, 'g', 15), QString::number(yaw, 'g', 15), QString::number(dwell, 'g', 15), QString("wait")}) items << new QStandardItem(text);
     items[5]->setEditable(false);
     appendRow(items);
   }
-  bool setData(const QModelIndex &index, const QVariant &value, int role = Qt::EditRole) override {
+  QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override {
+    if (index.column() == 5 && role == Qt::DisplayRole) return QString("等待");
+    return QStandardItemModel::data(index, role);
+  }
+  bool setData(const QModelIndex& index, const QVariant& value, int role = Qt::EditRole) override {
     if (role == Qt::EditRole && index.column() >= 1 && index.column() <= 4) {
       bool ok = false;
       double v = value.toDouble(&ok);
@@ -41,28 +45,28 @@ class FieldRouteModel : public QStandardItemModel {
       for (int col = 1; col <= 4; ++col) {
         bool ok = false;
         double value = item(row, col)->text().toDouble(&ok);
-        if (!ok || !std::isfinite(value) || (col == 4 && value < 0)) throw std::runtime_error("Invalid waypoint numeric value");
+        if (!ok || !std::isfinite(value) || (col == 4 && value < 0)) throw std::runtime_error("航点数值无效");
         p[names[col - 1]] = value;
       }
       points.append(p);
     }
     return {{"schema_version", 1}, {"route_id", id}, {"map", binding}, {"waypoints", points}};
   }
-  bool fromRoute(QJsonObject route, QJsonObject binding, QString *error = nullptr) {
+  bool fromRoute(QJsonObject route, QJsonObject binding, QString* error = nullptr) {
     if (route["schema_version"].toInt() != 1 || route["map"].toObject() != binding || route["waypoints"].toArray().isEmpty()) {
-      if (error) *error = "Route map binding/schema mismatch";
+      if (error) *error = "路线地图绑定或格式不匹配";
       return false;
     }
     QJsonArray points = route["waypoints"].toArray();
-    for (const auto &entry : points) {
+    for (const auto& entry : points) {
       auto p = entry.toObject();
       if (p["action"].toString("wait") != "wait" || !p["x"].isDouble() || !p["y"].isDouble() || !p["yaw"].isDouble() || p["dwell_seconds"].toDouble(0) < 0) {
-        if (error) *error = "Invalid waypoint";
+        if (error) *error = "航点数据无效";
         return false;
       }
     }
     removeRows(0, rowCount());
-    for (const auto &entry : points) {
+    for (const auto& entry : points) {
       auto p = entry.toObject();
       addPoint(p["id"].toString(), p["x"].toDouble(), p["y"].toDouble(), p["yaw"].toDouble(), p["dwell_seconds"].toDouble(0));
     }
