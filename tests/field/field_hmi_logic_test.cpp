@@ -23,6 +23,9 @@ int main(int argc, char** argv) {
   REQUIRE(model.data(model.index(0, 5)).toString() == "等待");
   REQUIRE(model.item(0, 5)->text() == "wait");
   REQUIRE(fieldLabel("READY") == "就绪");
+  for (const auto& state : {"STOPPED", "RUNNING", "FINISH", "PROCESSING", "VERIFY", "LOCALIZATION_ASSET_BUILD", "GRID_BUILD", "REVIEW_REQUIRED", "READY", "CANCELLED", "ERROR"}) {
+    REQUIRE(fieldLabel(state) != state);
+  }
   REQUIRE(fieldLabel("CONFIG_REQUIRED") == "待配置");
   REQUIRE(fieldLabel("LOCALIZATION_ASSET_BUILD") == "生成定位资产");
   REQUIRE(fieldLabel("FUTURE_STATE") == "FUTURE_STATE");
