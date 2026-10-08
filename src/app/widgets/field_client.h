@@ -34,7 +34,7 @@ class FieldClient : public QObject {
       finish(error.error == QJsonParseError::NoError ? doc.object() : QJsonObject{{"ok", false}, {"error", "Invalid runtime response"}});
     });
     connect(socket, QOverload<QLocalSocket::LocalSocketError>::of(&QLocalSocket::errorOccurred), socket, [finish, socket](auto) { finish({{"ok", false}, {"error", socket->errorString()}}); });
-    timer->start(request.value("command").toString() == "DOCTOR" ? 90000 : 10000);
+    timer->start((request.value("command").toString() == "DOCTOR" || request.value("command").toString() == "SAVE_NAVIGATION_EDIT") ? 90000 : 10000);
     socket->connectToServer(qEnvironmentVariable("AGT_FIELD_SOCKET"));
   }
 };

@@ -87,6 +87,7 @@ class MainWindow : public QMainWindow {
   bool dragging_window_{false};
   QPoint drag_position_;
   std::map<std::string, RatioLayoutedFrame *> image_frame_map_;
+  void SaveFieldMap();
   std::string map_path_{"./map"};
   DisplayConfigWidget *display_config_widget_{nullptr};
   ads::CDockWidget *settings_dock_{nullptr};

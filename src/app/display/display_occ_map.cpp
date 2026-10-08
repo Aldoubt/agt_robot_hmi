@@ -146,9 +146,9 @@ OccupancyMap DisplayOccMap::GetOccupancyMap() {
       int alpha = color.alpha();
 
       // 如果颜色是黑色且 alpha > 0，表示占据栅格
-      if (color == QColor(Qt::black) && alpha > 0) {
+      if (color.red() == 0 && color.green() == 0 && color.blue() == 0 && alpha > 0) {
         // 将 alpha 映射回 0-100 的栅格值 (之前是将 0-100 映射到 0-255 的透明度)
-        int map_value = static_cast<int>(alpha / 2.55);  // 反向还原栅格值
+        int map_value = static_cast<int>(std::round(alpha / 2.55));  // 反向还原栅格值
         map(j, i) = map_value;                           // 还原栅格数据
       }
       // 如果颜色是白色，表示自由区域或未知区域

@@ -8,15 +8,20 @@
  * 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
 #include "mainwindow.h"
+#include <QButtonGroup>
 #include <QDebug>
+#include <QDir>
 #include <QEvent>
+#include <QFile>
+#include <QFileInfo>
 #include <QFont>
 #include <QFontDatabase>
+#include <QMessageBox>
 #include <QMouseEvent>
+#include <QSplitter>
+#include <QUuid>
 #include <iostream>
 #include <opencv2/opencv.hpp>
-#include <QFileInfo>
-#include <QFile>
 #include "AutoHideDockContainer.h"
 #include "DockAreaTabBar.h"
 #include "DockAreaTitleBar.h"
@@ -25,12 +30,9 @@
 #include "Eigen/Dense"
 #include "FloatingDockContainer.h"
 #include "algorithm.h"
-#include "logger/logger.h"
 #include "config/config_manager.h"
+#include "logger/logger.h"
 #include "ui_mainwindow.h"
-#include <QButtonGroup>
-#include <QSplitter>
-#include <QMessageBox>
 
 #include "widgets/speed_ctrl.h"
 #include "widgets/field_panel.h"
@@ -915,6 +917,10 @@ void MainWindow::setupUi() {
           [this]() { display_manager_->StartReloc(); });
 
   connect(re_save_map_btn, &QToolButton::clicked, [this]() {
+    if (nav_goal_table_view_->FieldMode()) {
+      SaveFieldMap();
+      return;
+    }
     QString fileName = QFileDialog::getSaveFileName(nullptr, "Save Map files",
                                                     "", "Map files (*.yaml,*.pgm,*.pgm.json)",
                                                     nullptr, QFileDialog::DontUseNativeDialog);
@@ -924,8 +930,11 @@ void MainWindow::setupUi() {
       
       // 保存占用栅格地图
       auto occ_map = display_manager_->GetOccupancyMap();
-      occ_map.Save(fileName.toStdString());
-      
+      if (!occ_map.Save(fileName.toStdString())) {
+        QMessageBox::warning(this, "保存失败", "地图导出失败，请检查数据和目录权限。");
+        return;
+      }
+
       // 保存拓扑地图
       auto topology_map = display_manager_->GetTopologyMap();
 
@@ -950,11 +959,18 @@ void MainWindow::setupUi() {
   });
 
   connect(save_map_btn, &QToolButton::clicked, [this]() {
-    
+    if (nav_goal_table_view_->FieldMode()) {
+      SaveFieldMap();
+      return;
+    }
+
     // 保存占用栅格地图
     auto occ_map = display_manager_->GetOccupancyMap();
-    occ_map.Save(map_path_);
-    
+    if (!occ_map.Save(map_path_)) {
+      QMessageBox::warning(this, "保存失败", "地图导出失败，请检查数据和目录权限。");
+      return;
+    }
+
     // 保存拓扑地图
     auto topology_map = display_manager_->GetTopologyMap();
 
@@ -1260,4 +1276,52 @@ bool MainWindow::LoadMap(const std::string& file_path) {
   }
   
   return false;
+}
+void MainWindow::SaveFieldMap() {
+  auto client = new FieldClient(this);
+  client->request({{"command", "STATUS"}}, [this, client](QJsonObject response) {
+    if (!response["ok"].toBool()) {
+      QMessageBox::warning(this, "保存失败", response["error"].toString());
+      client->deleteLater();
+      return;
+    }
+    auto state = response["result"].toObject();
+    QString activeMap = state["bundle_path"].toString() + "/navigation/map.yaml";
+    QString loadedMap = QString::fromStdString(map_path_) + ".yaml";
+    auto binding = state["map"].toObject();
+    if (binding.isEmpty() || QFileInfo(activeMap).canonicalFilePath().isEmpty() ||
+        QFileInfo(activeMap).canonicalFilePath() != QFileInfo(loadedMap).canonicalFilePath() ||
+        binding != nav_goal_table_view_->field_binding_) {
+      QMessageBox::warning(this, "保存失败", "请先激活并加载要编辑的地图包，不能将其他地图替换到当前定位地图。");
+      client->deleteLater();
+      return;
+    }
+    if (QMessageBox::question(this, "确认地图编辑", "保存将生成并激活一个新的二维地图版本，保留原三维定位资产。\n导航将停止，旧路线需要重新绑定。确认当前编辑结果？") != QMessageBox::Yes) {
+      client->deleteLater();
+      return;
+    }
+    QString root = QFileInfo(qEnvironmentVariable("AGT_FIELD_SOCKET")).absolutePath();
+    QString staging = root + "/map_edits/" + QUuid::createUuid().toString(QUuid::WithoutBraces);
+    if (!QDir().mkpath(staging) || !display_manager_->GetOccupancyMap().Save((staging + "/map").toStdString())) {
+      QMessageBox::warning(this, "保存失败", "无法导出地图草稿，请检查磁盘空间和目录权限。");
+      client->deleteLater();
+      return;
+    }
+    if (!Config::ConfigManager::Instance()->WriteTopologyMap((staging + "/map.topology").toStdString(), display_manager_->GetTopologyMap())) {
+      QMessageBox::warning(this, "保存失败", "拓扑地图草稿写入失败，未发布新地图版本。");
+      client->deleteLater();
+      return;
+    }
+    client->request({{"command", "SAVE_NAVIGATION_EDIT"}, {"source_binding", binding}, {"edited_map", staging + "/map.yaml"}, {"confirmed", true}},
+                    [this, client, staging](QJsonObject saved) {
+                      if (saved["ok"].toBool()) {
+                        auto result = saved["result"].toObject();
+                        LoadMap(result["navigation_map"].toString().toStdString());
+                        QMessageBox::information(this, "保存成功", "新地图版本已校验并激活：" + result["binding"].toObject()["map_version"].toString() + "\n请重新启动定位 / 导航，并为新版本保存路线。");
+                        QDir(staging).removeRecursively();
+                      } else
+                        QMessageBox::warning(this, "保存失败", saved["error"].toString());
+                      client->deleteLater();
+                    });
+  });
 }

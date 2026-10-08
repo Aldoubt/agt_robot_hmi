@@ -52,9 +52,9 @@ struct MapConfig {
   double resolution = 0.1;
   std::vector<double> origin;
   int negate{0};
-  double occupied_thresh{0.25};
-  double free_thresh{0.65};
-  MapMode mode;
+  double occupied_thresh{0.65};
+  double free_thresh{0.196};
+  MapMode mode{TRINARY};
   MapConfig() {
     origin.resize(3);
   }
@@ -143,19 +143,26 @@ struct MapConfig {
     }
     return true;
   }
-  void Save(const std::string &filename) {
+  bool Save(const std::string& filename) {
     std::ofstream file(filename);
     if (file.is_open()) {
       file << "image: " << image << std::endl;
+      file.precision(17);
+      file << "mode: " << (mode == TRINARY ? "trinary" : mode == SCALE ? "scale"
+                                                                       : "raw")
+           << std::endl;
       file << "resolution: " << resolution << std::endl;
       file << "origin: [" << origin[0] << ", " << origin[1] << ", " << origin[2] << "]" << std::endl;
       file << "negate: " << negate << std::endl;
       file << "occupied_thresh: " << occupied_thresh << std::endl;
       file << "free_thresh: " << free_thresh << std::endl;
+      file.flush();
+      bool ok = file.good();
       file.close();
-      LOG_INFO("配置已成功写入到文件 " << filename);
+      return ok && !file.fail();
     } else {
-      LOG_INFO("无法打开文件 " << filename);
+      LOG_ERROR("无法打开文件 " << filename);
+      return false;
     }
   }
 };
@@ -336,49 +343,46 @@ class OccupancyMap {
     }
     return res;
   }
-  //保存地图到路径
-  void Save(std::string map_name) {
-    std::string mapdatafile = map_name + ".pgm";
-    printf("Writing map occupancy data to %s", mapdatafile.c_str());
-    FILE *out = fopen(mapdatafile.c_str(), "w");
-    if (!out) {
-      printf("Couldn't save map file to %s", mapdatafile.c_str());
-      return;
-    }
-
-    fprintf(out, "P5\n# CREATOR: map_saver.cpp %.3f m/pix\n%d %d\n255\n",
-            map_config.resolution, width(), height());
-    for (unsigned int y = 0; y < height(); y++) {
-      for (unsigned int x = 0; x < width(); x++) {
-        // unsigned int i = x + (height() - y - 1) * map->info.width;
-        if (map_data(y, x) >= 0 && map_data(y, x) <= map_config.free_thresh) {  // [0,free)
-          fputc(254, out);
-        } else if (map_data(y, x) >= map_config.occupied_thresh) {  // (occ,255]
-          fputc(000, out);
-        } else {  //occ [0.25,0.65]
-          fputc(205, out);
+  // 保存地图到路径
+  //  Export occupancy probabilities as a canonical Nav2 trinary map.
+  bool Save(std::string map_name) {
+    boost::filesystem::path base(map_name);
+    if (base.extension() == ".yaml" || base.extension() == ".pgm") base.replace_extension();
+    map_name = base.string();
+    if (rows <= 0 || cols <= 0 || map_data.rows() != rows || map_data.cols() != cols ||
+        map_config.origin.size() != 3 || !std::isfinite(map_config.resolution) || map_config.resolution <= 0 ||
+        !std::isfinite(map_config.free_thresh) || !std::isfinite(map_config.occupied_thresh) ||
+        map_config.free_thresh < 0 || map_config.free_thresh >= map_config.occupied_thresh || map_config.occupied_thresh > 1) return false;
+    for (double v : map_config.origin)
+      if (!std::isfinite(v)) return false;
+    FILE* out = fopen((map_name + ".pgm").c_str(), "wb");
+    if (!out) return false;
+    fprintf(out, "P5\n# AGT Qt occupancy export\n%d %d\n255\n", cols, rows);
+    for (int y = 0; y < rows; ++y) {
+      for (int x = 0; x < cols; ++x) {
+        int cell = map_data(y, x);
+        if (cell < -1 || cell > 100) {
+          fclose(out);
+          return false;
         }
+        double probability = cell / 100.0;
+        int pixel = cell < 0 ? 205 : probability < map_config.free_thresh   ? 254
+                                 : probability > map_config.occupied_thresh ? 0
+                                                                            : 205;
+        fputc(pixel, out);
       }
     }
-
-    fclose(out);
-
-    std::string mapmetadatafile = map_name + ".yaml";
-    printf("Writing map occupancy data to %s", mapmetadatafile.c_str());
-
-    /*
-map_config.resolution: 0.100000
-origin: [0.000000, 0.000000, 0.000000]
-#
-negate: 0
-occupied_thresh: 0.65
-free_thresh: 0.196
-
-       */
-    boost::filesystem::path filepath(map_name);
-    std::string map_name_rel = filepath.stem().string();
-    map_config.image = "./" + map_name_rel + ".pgm";
-    map_config.Save(mapmetadatafile);
+    bool ok = !ferror(out);
+    ok = (fclose(out) == 0) && ok;
+    if (!ok) return false;
+    auto exported = map_config;
+    exported.image = base.filename().string() + ".pgm";
+    exported.mode = MapConfig::TRINARY;
+    exported.negate = 0;
+    // PGM 205 must remain unknown (50/255 > free threshold).
+    exported.free_thresh = 0.196;
+    exported.occupied_thresh = 0.65;
+    return exported.Save(map_name + ".yaml");
   }
   bool Load(const std::string &yaml_path) {
     if (!map_config.Load(yaml_path)) {
